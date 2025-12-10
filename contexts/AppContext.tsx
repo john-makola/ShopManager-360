@@ -1,166 +1,303 @@
 
-import React, { createContext, useContext, useState, ReactNode } from 'react';
-import { Customer, InventoryItem, PrintJob, Transaction, ExpenseItem, ServiceProduct, Supplier, User } from '../types';
-import { MOCK_CUSTOMERS, MOCK_INVENTORY, MOCK_JOBS, MOCK_TRANSACTIONS, MOCK_EXPENSE_ITEMS, MOCK_SERVICE_PRODUCTS, MOCK_SUPPLIERS, MOCK_USERS } from '../constants';
+import React, { createContext, useContext, useState, ReactNode, useMemo } from 'react';
+import { 
+  Customer, InventoryItem, JobStatus, PrintJob, Transaction, 
+  ExpenseItem, ServiceProduct, Supplier, User, Organization, SupplierCategory 
+} from '../types';
+import { 
+  MOCK_JOBS, MOCK_INVENTORY, MOCK_CUSTOMERS, MOCK_SUPPLIERS, 
+  MOCK_TRANSACTIONS, MOCK_EXPENSE_ITEMS, MOCK_SERVICE_PRODUCTS, 
+  MOCK_USERS, MOCK_ORGANIZATIONS, MOCK_SUPPLIER_CATEGORIES 
+} from '../constants';
 
 interface AppContextType {
+  // Data
   jobs: PrintJob[];
-  customers: Customer[];
   inventory: InventoryItem[];
-  transactions: Transaction[];
-  expenseItems: ExpenseItem[];
-  serviceProducts: ServiceProduct[];
+  customers: Customer[];
   suppliers: Supplier[];
+  transactions: Transaction[];
+  serviceProducts: ServiceProduct[];
+  expenseItems: ExpenseItem[];
   users: User[];
+  supplierCategories: SupplierCategory[];
+  
+  // Auth & Org
+  currentUser: User | null;
+  isAuthenticated: boolean;
+  currentOrganization: Organization | null;
+  
+  // Actions - Jobs
   addJob: (job: PrintJob) => void;
   updateJob: (job: PrintJob) => void;
-  updateJobStatus: (id: string, status: PrintJob['status']) => void;
-  addTransaction: (transaction: Transaction) => void;
-  addExpenseItem: (item: ExpenseItem) => void;
-  updateExpenseItem: (item: ExpenseItem) => void;
-  deleteExpenseItem: (id: string) => void;
-  addServiceProduct: (item: ServiceProduct) => void;
-  updateServiceProduct: (item: ServiceProduct) => void;
-  deleteServiceProduct: (id: string) => void;
+  deleteJob: (id: string) => void;
+  updateJobStatus: (id: string, status: JobStatus) => void;
+  
+  // Actions - Inventory
+  addInventoryItem: (item: InventoryItem) => void;
+  updateInventoryItem: (item: InventoryItem) => void;
+  deleteInventoryItem: (id: string) => void;
+  
+  // Actions - Transactions
+  addTransaction: (transaction: Omit<Transaction, 'organizationId'>) => void;
+  updateTransaction: (transaction: Transaction) => void;
+  deleteTransaction: (id: string) => void;
+  
+  // Actions - Customers
   addCustomer: (customer: Customer) => void;
   updateCustomer: (customer: Customer) => void;
   deleteCustomer: (id: string) => void;
-  addSupplier: (supplier: Supplier) => void;
+  
+  // Actions - Suppliers
+  addSupplier: (supplier: Omit<Supplier, 'organizationId'>) => void;
   updateSupplier: (supplier: Supplier) => void;
   deleteSupplier: (id: string) => void;
-  updateInventoryQuantity: (id: string, change: number) => void;
+  addSupplierCategory: (category: string) => void;
+  deleteSupplierCategory: (id: string) => void;
+  
+  // Actions - Services
+  addServiceProduct: (item: Omit<ServiceProduct, 'organizationId'>) => void;
+  updateServiceProduct: (item: ServiceProduct) => void;
+  deleteServiceProduct: (id: string) => void;
+  
+  // Actions - Expenses
+  addExpenseItem: (item: ExpenseItem) => void;
+  updateExpenseItem: (item: ExpenseItem) => void;
+  deleteExpenseItem: (id: string) => void;
+  
+  // Actions - Users
   addUser: (user: User) => void;
   updateUser: (user: User) => void;
   deleteUser: (id: string) => void;
+  updateCurrentUser: (user: User) => void;
+  
+  // Actions - Org
+  updateOrganization: (org: Organization) => void;
+  
+  // Auth
+  login: (username: string, pass: string) => Promise<boolean>;
+  logout: () => void;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
 export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const [jobs, setJobs] = useState<PrintJob[]>(MOCK_JOBS);
-  const [customers, setCustomers] = useState<Customer[]>(MOCK_CUSTOMERS);
-  const [inventory, setInventory] = useState<InventoryItem[]>(MOCK_INVENTORY);
-  const [transactions, setTransactions] = useState<Transaction[]>(MOCK_TRANSACTIONS);
-  const [expenseItems, setExpenseItems] = useState<ExpenseItem[]>(MOCK_EXPENSE_ITEMS);
-  const [serviceProducts, setServiceProducts] = useState<ServiceProduct[]>(MOCK_SERVICE_PRODUCTS);
-  const [suppliers, setSuppliers] = useState<Supplier[]>(MOCK_SUPPLIERS);
-  const [users, setUsers] = useState<User[]>(MOCK_USERS);
+  // Raw State initialization with Mock Data (Contains data for ALL organizations)
+  const [allJobs, setAllJobs] = useState<PrintJob[]>(MOCK_JOBS);
+  const [allInventory, setAllInventory] = useState<InventoryItem[]>(MOCK_INVENTORY);
+  const [allCustomers, setAllCustomers] = useState<Customer[]>(MOCK_CUSTOMERS);
+  const [allSuppliers, setAllSuppliers] = useState<Supplier[]>(MOCK_SUPPLIERS);
+  const [allTransactions, setAllTransactions] = useState<Transaction[]>(MOCK_TRANSACTIONS);
+  const [allServiceProducts, setAllServiceProducts] = useState<ServiceProduct[]>(MOCK_SERVICE_PRODUCTS);
+  const [allExpenseItems, setAllExpenseItems] = useState<ExpenseItem[]>(MOCK_EXPENSE_ITEMS);
+  const [allUsers, setAllUsers] = useState<User[]>(MOCK_USERS);
+  const [allOrganizations, setAllOrganizations] = useState<Organization[]>(MOCK_ORGANIZATIONS);
+  const [allSupplierCategories, setAllSupplierCategories] = useState<SupplierCategory[]>(MOCK_SUPPLIER_CATEGORIES);
 
+  // Auth State
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [currentOrganization, setCurrentOrganization] = useState<Organization | null>(null);
+
+  const isAuthenticated = !!currentUser;
+
+  // --- Auth Actions ---
+  const login = async (username: string, pass: string): Promise<boolean> => {
+    // Simple mock authentication against ALL users
+    const user = allUsers.find(u => u.username === username && u.password === pass);
+    if (user) {
+        const org = allOrganizations.find(o => o.id === user.organizationId);
+        setCurrentUser({ ...user, lastLogin: new Date().toISOString() });
+        setCurrentOrganization(org || null);
+        return true;
+    }
+    return false;
+  };
+
+  const logout = () => {
+    setCurrentUser(null);
+    setCurrentOrganization(null);
+  };
+
+  const updateCurrentUser = (updatedUser: User) => {
+      setCurrentUser(updatedUser);
+      setAllUsers(prev => prev.map(u => u.id === updatedUser.id ? updatedUser : u));
+  };
+
+  const updateOrganization = (updatedOrg: Organization) => {
+      setCurrentOrganization(updatedOrg);
+      setAllOrganizations(prev => prev.map(o => o.id === updatedOrg.id ? updatedOrg : o));
+  };
+
+  // --- Data Filtering (Multi-tenancy Isolation) ---
+  const currentOrgId = currentOrganization?.id;
+
+  const jobs = useMemo(() => allJobs.filter(j => j.organizationId === currentOrgId), [allJobs, currentOrgId]);
+  const inventory = useMemo(() => allInventory.filter(i => i.organizationId === currentOrgId), [allInventory, currentOrgId]);
+  const customers = useMemo(() => allCustomers.filter(c => c.organizationId === currentOrgId), [allCustomers, currentOrgId]);
+  const suppliers = useMemo(() => allSuppliers.filter(s => s.organizationId === currentOrgId), [allSuppliers, currentOrgId]);
+  const transactions = useMemo(() => allTransactions.filter(t => t.organizationId === currentOrgId), [allTransactions, currentOrgId]);
+  const serviceProducts = useMemo(() => allServiceProducts.filter(s => s.organizationId === currentOrgId), [allServiceProducts, currentOrgId]);
+  const expenseItems = useMemo(() => allExpenseItems.filter(e => e.organizationId === currentOrgId), [allExpenseItems, currentOrgId]);
+  const supplierCategories = useMemo(() => allSupplierCategories.filter(sc => sc.organizationId === currentOrgId), [allSupplierCategories, currentOrgId]);
+  const users = useMemo(() => allUsers.filter(u => u.organizationId === currentOrgId), [allUsers, currentOrgId]);
+
+  // --- Data Actions (Updating Raw State) ---
+
+  // Jobs
   const addJob = (job: PrintJob) => {
-    setJobs(prev => [job, ...prev]);
+      if (!currentOrgId) return;
+      const newJob = { ...job, organizationId: currentOrgId };
+      setAllJobs(prev => [newJob, ...prev]);
   };
 
   const updateJob = (updatedJob: PrintJob) => {
-    setJobs(prev => prev.map(j => j.id === updatedJob.id ? updatedJob : j));
+      setAllJobs(prev => prev.map(j => j.id === updatedJob.id ? updatedJob : j));
   };
 
-  const updateJobStatus = (id: string, status: PrintJob['status']) => {
-    setJobs(prev => prev.map(j => j.id === id ? { ...j, status } : j));
+  const deleteJob = (id: string) => {
+      setAllJobs(prev => prev.filter(j => j.id !== id));
   };
 
-  const addTransaction = (transaction: Transaction) => {
-    setTransactions(prev => [transaction, ...prev]);
+  const updateJobStatus = (id: string, status: JobStatus) => {
+      setAllJobs(prev => prev.map(j => j.id === id ? { ...j, status } : j));
   };
 
-  const addExpenseItem = (item: ExpenseItem) => {
-    setExpenseItems(prev => [...prev, item]);
+  // Transactions
+  const addTransaction = (t: Omit<Transaction, 'organizationId'>) => {
+      if (!currentOrgId) return;
+      const newTransaction = { ...t, organizationId: currentOrgId };
+      setAllTransactions(prev => [newTransaction, ...prev]);
   };
 
-  const updateExpenseItem = (updatedItem: ExpenseItem) => {
-    setExpenseItems(prev => prev.map(i => i.id === updatedItem.id ? updatedItem : i));
+  const updateTransaction = (t: Transaction) => {
+      setAllTransactions(prev => prev.map(item => item.id === t.id ? t : item));
   };
 
-  const deleteExpenseItem = (id: string) => {
-    setExpenseItems(prev => prev.filter(i => i.id !== id));
+  const deleteTransaction = (id: string) => {
+      setAllTransactions(prev => prev.filter(t => t.id !== id));
   };
 
-  const addServiceProduct = (item: ServiceProduct) => {
-    setServiceProducts(prev => [item, ...prev]);
+  // Customers
+  const addCustomer = (c: Customer) => {
+      if (!currentOrgId) return;
+      const newCustomer = { ...c, organizationId: currentOrgId };
+      setAllCustomers(prev => [...prev, newCustomer]);
   };
 
-  const updateServiceProduct = (updatedItem: ServiceProduct) => {
-    setServiceProducts(prev => prev.map(i => i.id === updatedItem.id ? updatedItem : i));
-  };
-
-  const deleteServiceProduct = (id: string) => {
-    setServiceProducts(prev => prev.filter(i => i.id !== id));
-  };
-
-  const addCustomer = (customer: Customer) => {
-    setCustomers(prev => [customer, ...prev]);
-  };
-
-  const updateCustomer = (updatedCustomer: Customer) => {
-    setCustomers(prev => prev.map(c => c.id === updatedCustomer.id ? updatedCustomer : c));
+  const updateCustomer = (c: Customer) => {
+      setAllCustomers(prev => prev.map(cust => cust.id === c.id ? c : cust));
   };
 
   const deleteCustomer = (id: string) => {
-    setCustomers(prev => prev.filter(c => c.id !== id));
+      setAllCustomers(prev => prev.filter(c => c.id !== id));
   };
 
-  const addSupplier = (supplier: Supplier) => {
-    setSuppliers(prev => [supplier, ...prev]);
+  // Suppliers
+  const addSupplier = (s: Omit<Supplier, 'organizationId'>) => {
+      if (!currentOrgId) return;
+      const newSupplier = { ...s, organizationId: currentOrgId };
+      setAllSuppliers(prev => [...prev, newSupplier]);
   };
 
-  const updateSupplier = (updatedSupplier: Supplier) => {
-    setSuppliers(prev => prev.map(s => s.id === updatedSupplier.id ? updatedSupplier : s));
+  const updateSupplier = (s: Supplier) => {
+      setAllSuppliers(prev => prev.map(sup => sup.id === s.id ? s : sup));
   };
 
   const deleteSupplier = (id: string) => {
-    setSuppliers(prev => prev.filter(s => s.id !== id));
+      setAllSuppliers(prev => prev.filter(s => s.id !== id));
   };
 
-  const updateInventoryQuantity = (id: string, change: number) => {
-    setInventory(prev => prev.map(item => {
-        if (item.id === id) {
-            return { ...item, quantity: Math.max(0, item.quantity + change) };
-        }
-        return item;
-    }));
+  const addSupplierCategory = (category: string) => {
+      if (!currentOrgId) return;
+      const newCategory: SupplierCategory = {
+          id: Math.random().toString(36).substr(2, 9),
+          organizationId: currentOrgId,
+          name: category
+      };
+      setAllSupplierCategories(prev => [...prev, newCategory]);
   };
 
-  const addUser = (user: User) => {
-    setUsers(prev => [user, ...prev]);
+  const deleteSupplierCategory = (id: string) => {
+      setAllSupplierCategories(prev => prev.filter(sc => sc.id !== id));
   };
 
-  const updateUser = (updatedUser: User) => {
-    setUsers(prev => prev.map(u => u.id === updatedUser.id ? updatedUser : u));
+  // Services
+  const addServiceProduct = (s: Omit<ServiceProduct, 'organizationId'>) => {
+      if (!currentOrgId) return;
+      const newService = { ...s, organizationId: currentOrgId };
+      setAllServiceProducts(prev => [...prev, newService]);
+  };
+
+  const updateServiceProduct = (s: ServiceProduct) => {
+      setAllServiceProducts(prev => prev.map(item => item.id === s.id ? s : item));
+  };
+
+  const deleteServiceProduct = (id: string) => {
+      setAllServiceProducts(prev => prev.filter(s => s.id !== id));
+  };
+
+  // Expense Items (Catalog)
+  const addExpenseItem = (e: ExpenseItem) => {
+      if (!currentOrgId) return;
+      const newItem = { ...e, organizationId: currentOrgId };
+      setAllExpenseItems(prev => [...prev, newItem]);
+  };
+
+  const updateExpenseItem = (e: ExpenseItem) => {
+      setAllExpenseItems(prev => prev.map(item => item.id === e.id ? e : item));
+  };
+
+  const deleteExpenseItem = (id: string) => {
+      setAllExpenseItems(prev => prev.filter(e => e.id !== id));
+  };
+
+  // Users
+  const addUser = (u: User) => {
+      if (!currentOrgId) return;
+      const newUser = { ...u, organizationId: currentOrgId };
+      setAllUsers(prev => [...prev, newUser]);
+  };
+
+  const updateUser = (u: User) => {
+      setAllUsers(prev => prev.map(user => user.id === u.id ? u : user));
+      if (currentUser && currentUser.id === u.id) {
+          setCurrentUser(u);
+      }
   };
 
   const deleteUser = (id: string) => {
-    setUsers(prev => prev.filter(u => u.id !== id));
+      setAllUsers(prev => prev.filter(u => u.id !== id));
+  };
+
+  // Inventory
+  const addInventoryItem = (item: InventoryItem) => {
+      if (!currentOrgId) return;
+      const newItem = { ...item, organizationId: currentOrgId };
+      setAllInventory(prev => [...prev, newItem]);
+  };
+
+  const updateInventoryItem = (item: InventoryItem) => {
+      setAllInventory(prev => prev.map(i => i.id === item.id ? item : i));
+  };
+
+  const deleteInventoryItem = (id: string) => {
+      setAllInventory(prev => prev.filter(i => i.id !== id));
   };
 
   return (
-    <AppContext.Provider value={{ 
-      jobs, 
-      customers, 
-      inventory, 
-      transactions, 
-      expenseItems,
-      serviceProducts,
-      suppliers,
-      users,
-      addJob, 
-      updateJob, 
-      updateJobStatus, 
-      addTransaction,
-      addExpenseItem,
-      updateExpenseItem,
-      deleteExpenseItem,
-      addServiceProduct,
-      updateServiceProduct,
-      deleteServiceProduct,
-      addCustomer,
-      updateCustomer,
-      deleteCustomer,
-      addSupplier,
-      updateSupplier,
-      deleteSupplier,
-      updateInventoryQuantity,
-      addUser,
-      updateUser,
-      deleteUser
+    <AppContext.Provider value={{
+        jobs, inventory, customers, suppliers, transactions, serviceProducts, expenseItems, users, supplierCategories,
+        currentUser, isAuthenticated, currentOrganization,
+        addJob, updateJob, deleteJob, updateJobStatus,
+        addTransaction, updateTransaction, deleteTransaction,
+        addCustomer, updateCustomer, deleteCustomer,
+        addSupplier, updateSupplier, deleteSupplier, addSupplierCategory, deleteSupplierCategory,
+        addServiceProduct, updateServiceProduct, deleteServiceProduct,
+        addExpenseItem, updateExpenseItem, deleteExpenseItem,
+        addUser, updateUser, deleteUser, updateCurrentUser,
+        updateOrganization,
+        addInventoryItem, updateInventoryItem, deleteInventoryItem,
+        login, logout
     }}>
       {children}
     </AppContext.Provider>
@@ -169,7 +306,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
 export const useAppContext = () => {
   const context = useContext(AppContext);
-  if (!context) {
+  if (context === undefined) {
     throw new Error('useAppContext must be used within an AppProvider');
   }
   return context;

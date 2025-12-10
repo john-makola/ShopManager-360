@@ -27,7 +27,7 @@ const SearchResults: React.FC = () => {
         matches(j.id) || matches(j.invoiceNumber) || matches(j.price) || matches(j.quantity)
       ),
       inventory: inventory.filter(i => 
-        matches(i.name) || matches(i.category) || matches(i.description) || 
+        matches(i.name) || matches(i.category) || 
         matches(i.supplier) || matches(i.salePrice) || matches(i.quantity)
       ),
       customers: customers.filter(c => 
@@ -88,7 +88,7 @@ const SearchResults: React.FC = () => {
       {results && results.jobs.length > 0 && (
         <div className="space-y-4">
            <h2 className="text-lg font-bold text-slate-700 flex items-center gap-2 uppercase tracking-wide">
-             <Printer size={20} className="text-blue-500"/> Sales & Orders ({results.jobs.length})
+             <Printer size={20} className="text-blue-500"/> Sales History ({results.jobs.length})
            </h2>
            <div className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
               <table className="w-full text-left text-sm">
@@ -111,7 +111,7 @@ const SearchResults: React.FC = () => {
                              <div className="text-xs text-slate-400 truncate max-w-xs">{job.description}</div>
                           </td>
                           <td className="px-4 py-3 text-slate-600">{job.customerName}</td>
-                          <td className="px-4 py-3 font-bold text-slate-700">${job.price.toLocaleString()}</td>
+                          <td className="px-4 py-3 font-bold text-slate-700">KSh {job.price.toLocaleString()}</td>
                           <td className="px-4 py-3"><StatusBadge status={job.status} /></td>
                           <td className="px-4 py-3 text-right">
                              <Link to={`/sales/${job.saleType === 'Credit' ? 'credit' : 'cash'}`} className="text-blue-600 hover:text-blue-800 text-xs font-bold flex items-center justify-end gap-1">
@@ -152,7 +152,7 @@ const SearchResults: React.FC = () => {
                         </div>
                         <div className="text-right">
                            <p className="text-xs text-slate-400 uppercase">Price</p>
-                           <p className="font-bold text-green-600">${item.salePrice}</p>
+                           <p className="font-bold text-green-600">KSh {item.salePrice}</p>
                         </div>
                     </div>
                  </div>
@@ -209,7 +209,7 @@ const SearchResults: React.FC = () => {
                           <td className="px-4 py-3 font-mono text-xs text-slate-500">{s.code}</td>
                           <td className="px-4 py-3 font-medium text-slate-800">{s.name}</td>
                           <td className="px-4 py-3 text-slate-600">{s.category}</td>
-                          <td className="px-4 py-3 font-bold text-purple-600">${s.price.toLocaleString()}</td>
+                          <td className="px-4 py-3 font-bold text-purple-600">KSh {s.price.toLocaleString()}</td>
                        </tr>
                     ))}
                  </tbody>
@@ -261,7 +261,7 @@ const SearchResults: React.FC = () => {
                           <td className="px-4 py-3"><span className="text-xs bg-red-50 text-red-600 px-2 py-1 rounded">Record</span></td>
                           <td className="px-4 py-3 font-medium text-slate-800">{e.description}</td>
                           <td className="px-4 py-3 text-slate-600">{e.category}</td>
-                          <td className="px-4 py-3 font-bold text-red-600 text-right">${e.amount.toLocaleString()}</td>
+                          <td className="px-4 py-3 font-bold text-red-600 text-right">KSh {e.amount.toLocaleString()}</td>
                        </tr>
                     ))}
                     {results.stockExpenses.map(e => (
@@ -269,7 +269,7 @@ const SearchResults: React.FC = () => {
                           <td className="px-4 py-3"><span className="text-xs bg-orange-50 text-orange-600 px-2 py-1 rounded">Stock Item</span></td>
                           <td className="px-4 py-3 font-medium text-slate-800">{e.description} <span className="text-xs text-slate-400">({e.code})</span></td>
                           <td className="px-4 py-3 text-slate-600">{e.category}</td>
-                          <td className="px-4 py-3 font-bold text-orange-600 text-right">${e.costPerUnit.toLocaleString()} / unit</td>
+                          <td className="px-4 py-3 font-bold text-orange-600 text-right">KSh {e.costPerUnit.toLocaleString()} / unit</td>
                        </tr>
                     ))}
                  </tbody>

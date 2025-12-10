@@ -1,9 +1,10 @@
+
 import React from 'react';
 import { useAppContext } from '../contexts/AppContext';
 import { 
   DollarSign, Users, Package, 
   TrendingUp, TrendingDown, AlertTriangle, 
-  ArrowRight, Plus, CreditCard 
+  ArrowRight, Plus, CreditCard, FileText, ShoppingCart, Wallet 
 } from 'lucide-react';
 import { 
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, 
@@ -11,6 +12,7 @@ import {
 } from 'recharts';
 import { useNavigate } from 'react-router-dom';
 import { StatusBadge } from '../components/ui/StatusBadge';
+import { generatePDFReport, openPDFWindow } from '../utils/pdfUtils';
 
 const Dashboard = () => {
   const { jobs, transactions, inventory, customers } = useAppContext();
@@ -22,16 +24,23 @@ const Dashboard = () => {
   const currentMonth = new Date().toISOString().slice(0, 7); // YYYY-MM
   
   const monthlyJobs = jobs.filter(j => j.createdAt.startsWith(currentMonth));
-  const monthlyExpenses = transactions.filter(t => t.type === 'Expense' && t.date.startsWith(currentMonth));
+  
+  // Filter for Operational Expenses only (Exclude Stock/Inventory Purchases which are Assets)
+  const monthlyOpExpenses = transactions.filter(t => 
+      t.type === 'Expense' && 
+      t.date.startsWith(currentMonth) && 
+      t.category !== 'Stock Purchase' && 
+      t.category !== 'Inventory Purchase'
+  );
   
   const revenue = monthlyJobs.reduce((sum, j) => sum + (j.price || 0), 0);
   
-  // Expenses = General Expenses + Cost of Goods Sold (Job Costs)
-  const generalExpenses = monthlyExpenses.reduce((sum, t) => sum + t.amount, 0);
+  // Expenses = General Operational Expenses + Cost of Goods Sold (Job Costs)
+  const opExpensesTotal = monthlyOpExpenses.reduce((sum, t) => sum + t.amount, 0);
   const cogs = monthlyJobs.reduce((sum, j) => sum + (j.cost || 0), 0);
-  const totalExpenses = generalExpenses + cogs;
   
-  const netProfit = revenue - totalExpenses;
+  // Net Profit = Revenue - COGS - OpEx
+  const netProfit = revenue - cogs - opExpensesTotal;
   
   // 2. Receivables (Total Outstanding)
   const totalReceivables = customers.reduce((sum, c) => sum + (c.balance || 0), 0);
@@ -39,6 +48,25 @@ const Dashboard = () => {
   // 3. Inventory
   const lowStockItems = inventory.filter(i => i.quantity <= i.threshold);
   const stockValue = inventory.reduce((sum, i) => sum + (i.quantity * i.costPrice), 0);
+
+  // 4. Liquid Accounts (Cash/Bank/Mpesa)
+  // Logic: Sum of Income (Transactions) - Sum of Expenses (Transactions) grouped by Payment Method
+  // Note: For Cash Flow, we DO include Stock Purchases, because cash actually left the account.
+  const getBalanceByMethod = (method: 'Cash' | 'M-PESA' | 'Bank' | 'Card') => {
+      const income = transactions
+        .filter(t => t.type === 'Income' && t.paymentMethod === method)
+        .reduce((sum, t) => sum + t.amount, 0);
+      const expense = transactions
+        .filter(t => t.type === 'Expense' && t.paymentMethod === method)
+        .reduce((sum, t) => sum + t.amount, 0);
+      return income - expense;
+  };
+
+  const accountBalances = {
+      cash: getBalanceByMethod('Cash'),
+      mpesa: getBalanceByMethod('M-PESA'),
+      bank: getBalanceByMethod('Bank') + getBalanceByMethod('Card'), // Group Card with Bank for simplicity
+  };
 
   // --- Chart Data Preparation ---
   // Last 7 Days Trend
@@ -54,24 +82,50 @@ const Dashboard = () => {
 
   const trendData = getLast7Days().map(date => {
     const dayJobs = jobs.filter(j => j.createdAt.startsWith(date));
-    const dayExpenses = transactions.filter(t => t.type === 'Expense' && t.date === date);
+    
+    // For Profit Trend, exclude Stock Purchases
+    const dayOpExpenses = transactions.filter(t => 
+        t.type === 'Expense' && 
+        t.date === date && 
+        t.category !== 'Stock Purchase' && 
+        t.category !== 'Inventory Purchase'
+    );
     
     const dayRev = dayJobs.reduce((sum, j) => sum + (j.price || 0), 0);
-    const dayExp = dayExpenses.reduce((sum, t) => sum + t.amount, 0) + dayJobs.reduce((sum, j) => sum + (j.cost || 0), 0);
+    const dayExp = dayOpExpenses.reduce((sum, t) => sum + t.amount, 0) + dayJobs.reduce((sum, j) => sum + (j.cost || 0), 0);
     
     return {
       date: date.slice(5), // MM-DD
       revenue: dayRev,
-      expenses: dayExp,
+      expenses: dayExp, // This is Cost + OpEx
       profit: dayRev - dayExp
     };
   });
 
   // Sales Split Data
   const salesSplit = [
-    { name: 'Cash', value: monthlyJobs.filter(j => j.saleType === 'Cash').reduce((sum, j) => sum + j.price, 0), color: '#22c55e' },
-    { name: 'Credit', value: monthlyJobs.filter(j => j.saleType === 'Credit').reduce((sum, j) => sum + j.price, 0), color: '#8b5cf6' }
+    { name: 'Cash', value: monthlyJobs.filter(j => j.saleType === 'Cash').reduce((sum, j) => sum + j.price, 0) },
+    { name: 'Credit', value: monthlyJobs.filter(j => j.saleType === 'Credit').reduce((sum, j) => sum + j.price, 0) }
   ];
+
+  const handleDownloadWorkflow = () => {
+    const content = `
+      <h3>System Workflow Guide</h3>
+      <p>This guide explains how Shop Manager 360 handles sales, inventory, and accounting.</p>
+      <ul>
+        <li><strong>Inventory:</strong> Add products and set stock levels.</li>
+        <li><strong>Sales:</strong> Create orders. Stock is deducted automatically. Income is recorded in transactions.</li>
+        <li><strong>Customers:</strong> Track credit balances for wholesale clients.</li>
+        <li><strong>Expenses:</strong> Record operational costs (Rent, Salaries) to reduce account balances.</li>
+        <li><strong>Stock Purchases:</strong> Buying stock reduces Cash/Bank but does NOT lower Net Profit immediately (it's an asset). Cost is realized when items are sold (COGS).</li>
+      </ul>
+    `;
+    const html = generatePDFReport({ 
+      title: 'Shop Manager 360 - Workflow', 
+      content 
+    });
+    openPDFWindow(html);
+  };
 
   return (
     <div className="space-y-6">
@@ -79,54 +133,85 @@ const Dashboard = () => {
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-slate-800">Overview</h1>
-          <p className="text-slate-500">Shop performance summary for {new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}</p>
+          <p className="text-slate-500">Business performance summary for {new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}</p>
         </div>
         
         {/* Quick Actions */}
         <div className="flex flex-wrap gap-2">
           <button 
-            onClick={() => navigate('/sales/cash')} 
-            className="flex items-center gap-2 bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-green-700 shadow-sm transition-colors"
+            onClick={handleDownloadWorkflow}
+            className="flex items-center gap-2 bg-white border border-slate-300 text-slate-700 px-4 py-2 rounded-lg text-sm font-medium hover:bg-slate-50 shadow-sm transition-colors"
           >
-            <Plus size={16} /> New Cash Sale
+            <FileText size={16} /> System Guide
+          </button>
+          <button 
+            onClick={() => navigate('/sales/cash')} 
+            className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 shadow-sm transition-colors"
+          >
+            <Plus size={16} /> Cash Sale
           </button>
           <button 
             onClick={() => navigate('/sales/credit')} 
-            className="flex items-center gap-2 bg-purple-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-purple-700 shadow-sm transition-colors"
+            className="flex items-center gap-2 bg-slate-800 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-slate-900 shadow-sm transition-colors"
           >
-            <Plus size={16} /> New Invoice
+            <Plus size={16} /> Credit Sale
           </button>
         </div>
       </div>
 
+      {/* Account Balances (Liquid Cash) - Using Theme Colors (Blue Palette) */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="bg-blue-950 text-white p-4 rounded-xl shadow-md flex items-center justify-between">
+              <div>
+                  <p className="text-blue-200 text-xs font-bold uppercase tracking-wider mb-1">Cash in Hand</p>
+                  <h3 className="text-2xl font-bold">KSh {accountBalances.cash.toLocaleString()}</h3>
+              </div>
+              <div className="bg-blue-900 p-2 rounded-lg"><Wallet size={24}/></div>
+          </div>
+          <div className="bg-blue-800 text-white p-4 rounded-xl shadow-md flex items-center justify-between">
+              <div>
+                  <p className="text-blue-200 text-xs font-bold uppercase tracking-wider mb-1">M-PESA Balance</p>
+                  <h3 className="text-2xl font-bold">KSh {accountBalances.mpesa.toLocaleString()}</h3>
+              </div>
+              <div className="bg-blue-700 p-2 rounded-lg"><DollarSign size={24}/></div>
+          </div>
+          <div className="bg-blue-600 text-white p-4 rounded-xl shadow-md flex items-center justify-between">
+              <div>
+                  <p className="text-blue-100 text-xs font-bold uppercase tracking-wider mb-1">Bank Account</p>
+                  <h3 className="text-2xl font-bold">KSh {accountBalances.bank.toLocaleString()}</h3>
+              </div>
+              <div className="bg-blue-500 p-2 rounded-lg"><CreditCard size={24}/></div>
+          </div>
+      </div>
+
       {/* KPI Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        {/* Revenue */}
+        {/* Revenue - Uses Theme Primary */}
         <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm relative overflow-hidden group">
            <div className="flex justify-between items-start z-10 relative">
               <div>
                  <p className="text-sm font-medium text-slate-500 mb-1">Monthly Revenue</p>
-                 <h3 className="text-2xl font-bold text-slate-800">${revenue.toLocaleString()}</h3>
+                 <h3 className="text-2xl font-bold text-slate-800">KSh {revenue.toLocaleString()}</h3>
               </div>
               <div className="p-2 bg-blue-50 text-blue-600 rounded-lg group-hover:scale-110 transition-transform">
                  <DollarSign size={24} />
               </div>
            </div>
            <div className="mt-4 flex items-center text-xs text-slate-400">
-              <span className="text-green-600 font-medium flex items-center gap-1 mr-2">
-                 <TrendingUp size={14} /> +{monthlyJobs.length} orders
+              <span className="text-blue-600 font-medium flex items-center gap-1 mr-2">
+                 <TrendingUp size={14} /> +{monthlyJobs.length} sales
               </span>
               this month
            </div>
         </div>
 
-        {/* Net Profit */}
+        {/* Net Profit - Semantic Colors (Green/Red) - Kept semantic for meaning */}
         <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm relative overflow-hidden group">
            <div className="flex justify-between items-start z-10 relative">
               <div>
                  <p className="text-sm font-medium text-slate-500 mb-1">Net Profit (Est.)</p>
                  <h3 className={`text-2xl font-bold ${netProfit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                    ${netProfit.toLocaleString()}
+                    KSh {netProfit.toLocaleString()}
                  </h3>
               </div>
               <div className={`p-2 rounded-lg group-hover:scale-110 transition-transform ${netProfit >= 0 ? 'bg-green-50 text-green-600' : 'bg-red-50 text-red-600'}`}>
@@ -134,16 +219,16 @@ const Dashboard = () => {
               </div>
            </div>
            <div className="mt-4 flex items-center text-xs text-slate-400">
-              Includes COGS & Expenses
+              Rev - COGS - OpEx
            </div>
         </div>
 
-        {/* Receivables */}
+        {/* Receivables - Semantic Red */}
         <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm relative overflow-hidden group">
            <div className="flex justify-between items-start z-10 relative">
               <div>
                  <p className="text-sm font-medium text-slate-500 mb-1">Receivables</p>
-                 <h3 className="text-2xl font-bold text-red-600">${totalReceivables.toLocaleString()}</h3>
+                 <h3 className="text-2xl font-bold text-red-600">KSh {totalReceivables.toLocaleString()}</h3>
               </div>
               <div className="p-2 bg-red-50 text-red-600 rounded-lg group-hover:scale-110 transition-transform">
                  <CreditCard size={24} />
@@ -154,12 +239,12 @@ const Dashboard = () => {
            </div>
         </div>
 
-        {/* Inventory Value */}
+        {/* Inventory Value - Uses Theme Secondary/Orange */}
         <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm relative overflow-hidden group">
            <div className="flex justify-between items-start z-10 relative">
               <div>
                  <p className="text-sm font-medium text-slate-500 mb-1">Stock Value</p>
-                 <h3 className="text-2xl font-bold text-slate-800">${stockValue.toLocaleString()}</h3>
+                 <h3 className="text-2xl font-bold text-slate-800">KSh {stockValue.toLocaleString()}</h3>
               </div>
               <div className="p-2 bg-orange-50 text-orange-600 rounded-lg group-hover:scale-110 transition-transform">
                  <Package size={24} />
@@ -175,13 +260,13 @@ const Dashboard = () => {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
          {/* Financial Trend */}
          <div className="lg:col-span-2 bg-white p-6 rounded-xl border border-slate-200 shadow-sm h-[400px]">
-            <h3 className="text-lg font-bold text-slate-800 mb-6">Financial Performance (Last 7 Days)</h3>
+            <h3 className="text-lg font-bold text-slate-800 mb-6">Profit Performance (Last 7 Days)</h3>
             <ResponsiveContainer width="100%" height="100%" className="!h-[320px]">
                <AreaChart data={trendData}>
                   <defs>
                     <linearGradient id="colorRev" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.1}/>
-                      <stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/>
+                      <stop offset="5%" stopColor="hsl(var(--primary-hue) var(--primary-sat) 50%)" stopOpacity={0.1}/>
+                      <stop offset="95%" stopColor="hsl(var(--primary-hue) var(--primary-sat) 50%)" stopOpacity={0}/>
                     </linearGradient>
                     <linearGradient id="colorExp" x1="0" y1="0" x2="0" y2="1">
                       <stop offset="5%" stopColor="#ef4444" stopOpacity={0.1}/>
@@ -190,14 +275,15 @@ const Dashboard = () => {
                   </defs>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9"/>
                   <XAxis dataKey="date" axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 12}} dy={10}/>
-                  <YAxis axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 12}} tickFormatter={(val) => `$${val}`}/>
+                  <YAxis axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 12}} tickFormatter={(val) => `KSh ${val}`}/>
                   <Tooltip 
                     contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
                     cursor={{ stroke: '#cbd5e1', strokeWidth: 1 }}
                   />
                   <Legend verticalAlign="top" height={36} iconType="circle"/>
-                  <Area type="monotone" dataKey="revenue" name="Revenue" stroke="#3b82f6" strokeWidth={3} fillOpacity={1} fill="url(#colorRev)" />
-                  <Area type="monotone" dataKey="expenses" name="Expenses" stroke="#ef4444" strokeWidth={3} fillOpacity={1} fill="url(#colorExp)" />
+                  {/* Use CSS Variable for Stroke Color */}
+                  <Area type="monotone" dataKey="revenue" name="Revenue" stroke="hsl(var(--primary-hue) var(--primary-sat) 50%)" strokeWidth={3} fillOpacity={1} fill="url(#colorRev)" />
+                  <Area type="monotone" dataKey="expenses" name="Costs & OpEx" stroke="#ef4444" strokeWidth={3} fillOpacity={1} fill="url(#colorExp)" />
                </AreaChart>
             </ResponsiveContainer>
          </div>
@@ -217,23 +303,22 @@ const Dashboard = () => {
                         paddingAngle={5}
                         dataKey="value"
                      >
-                        {salesSplit.map((entry, index) => (
-                           <Cell key={`cell-${index}`} fill={entry.color} />
-                        ))}
+                        <Cell key="cell-0" fill="hsl(var(--primary-hue) var(--primary-sat) 50%)" />
+                        <Cell key="cell-1" fill="#1e293b" />
                      </Pie>
-                     <Tooltip formatter={(val: number) => `$${val.toLocaleString()}`} />
+                     <Tooltip formatter={(val: number) => `KSh ${val.toLocaleString()}`} />
                      <Legend verticalAlign="bottom" height={36}/>
                   </PieChart>
                </ResponsiveContainer>
             </div>
             <div className="mt-4 grid grid-cols-2 gap-4 text-center border-t border-slate-100 pt-4">
                <div>
-                  <p className="text-xs text-slate-500 uppercase">Cash Sales</p>
-                  <p className="font-bold text-green-600 text-lg">${salesSplit[0].value.toLocaleString()}</p>
+                  <p className="text-xs text-slate-500 uppercase">Cash</p>
+                  <p className="font-bold text-blue-600 text-lg">KSh {salesSplit[0].value.toLocaleString()}</p>
                </div>
                <div>
-                  <p className="text-xs text-slate-500 uppercase">Credit Sales</p>
-                  <p className="font-bold text-purple-600 text-lg">${salesSplit[1].value.toLocaleString()}</p>
+                  <p className="text-xs text-slate-500 uppercase">Credit</p>
+                  <p className="font-bold text-slate-800 text-lg">KSh {salesSplit[1].value.toLocaleString()}</p>
                </div>
             </div>
          </div>
@@ -251,7 +336,7 @@ const Dashboard = () => {
                <table className="w-full text-left">
                   <thead className="bg-slate-50">
                      <tr>
-                        <th className="px-6 py-3 text-xs font-bold text-slate-500 uppercase">Transaction</th>
+                        <th className="px-6 py-3 text-xs font-bold text-slate-500 uppercase">Sale Ref</th>
                         <th className="px-6 py-3 text-xs font-bold text-slate-500 uppercase">Customer</th>
                         <th className="px-6 py-3 text-xs font-bold text-slate-500 uppercase">Status</th>
                         <th className="px-6 py-3 text-xs font-bold text-slate-500 uppercase text-right">Amount</th>
@@ -266,7 +351,7 @@ const Dashboard = () => {
                            </td>
                            <td className="px-6 py-4 text-slate-600">{job.customerName}</td>
                            <td className="px-6 py-4"><StatusBadge status={job.status} /></td>
-                           <td className="px-6 py-4 text-right font-bold text-slate-800">${job.price.toLocaleString()}</td>
+                           <td className="px-6 py-4 text-right font-bold text-slate-800">KSh {job.price.toLocaleString()}</td>
                         </tr>
                      ))}
                   </tbody>

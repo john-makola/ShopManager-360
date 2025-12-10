@@ -1,6 +1,12 @@
-export const generatePDFReport = ({ title, content, showDateRange }: { title: string, content: string, showDateRange?: { startDate: string, endDate: string } }) => {
+
+export const generatePDFReport = ({ title, content, showDateRange, organization }: { title: string, content: string, showDateRange?: { startDate: string, endDate: string }, organization?: any }) => {
   const dateStr = new Date().toLocaleDateString();
   const dateRangeStr = showDateRange ? `<p>Period: ${showDateRange.startDate} to ${showDateRange.endDate}</p>` : '';
+  
+  const orgName = organization?.name || 'Shop Manager 360';
+  const orgAddress = organization?.address ? `<div>${organization.address}</div>` : '';
+  const orgContact = [organization?.phone, organization?.email].filter(Boolean).join(' | ');
+  const orgContactHtml = orgContact ? `<div>${orgContact}</div>` : '';
   
   return `
     <!DOCTYPE html>
@@ -10,9 +16,10 @@ export const generatePDFReport = ({ title, content, showDateRange }: { title: st
         <style>
           body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; padding: 40px; color: #333; line-height: 1.5; }
           h1 { color: #1e293b; border-bottom: 2px solid #e2e8f0; padding-bottom: 15px; margin-bottom: 5px; }
-          .header { margin-bottom: 40px; }
+          .header { margin-bottom: 40px; text-align: left; }
           .company { font-size: 1.5rem; font-weight: bold; color: #2563eb; margin-bottom: 5px; }
-          .meta { font-size: 0.9rem; color: #64748b; }
+          .org-details { font-size: 0.85rem; color: #64748b; margin-bottom: 10px; }
+          .meta { font-size: 0.9rem; color: #64748b; margin-top: 10px;}
           
           table { width: 100%; border-collapse: collapse; margin-top: 15px; font-size: 12px; }
           th, td { border: 1px solid #e2e8f0; padding: 10px; text-align: left; }
@@ -36,7 +43,11 @@ export const generatePDFReport = ({ title, content, showDateRange }: { title: st
       </head>
       <body>
         <div class="header">
-          <div class="company">Shop Manager 360</div>
+          <div class="company">${orgName}</div>
+          <div class="org-details">
+            ${orgAddress}
+            ${orgContactHtml}
+          </div>
           <h1>${title}</h1>
           <div class="meta">
             Generated on: ${dateStr}<br/>

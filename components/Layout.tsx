@@ -2,10 +2,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { NAV_ITEMS } from '../constants';
-import { Bell, Search, UserCircle, Menu, Plus, Minus, ArrowRight, Package, Printer, Users, AlertTriangle, Clock, CreditCard, HelpCircle, ChevronUp, Settings, LogOut } from 'lucide-react';
+import { Bell, Search, UserCircle, Menu, Plus, Minus, ArrowRight, Package, Printer, Users, AlertTriangle, Clock, CreditCard, HelpCircle, ChevronUp, ChevronDown, Settings, LogOut, Building } from 'lucide-react';
 import { useAppContext } from '../contexts/AppContext';
 import { GlobalHelp } from './GlobalHelp';
-import { UserSettingsModal } from './UserSettingsModal';
+import { ThemePicker } from './ThemePicker';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -14,7 +14,7 @@ interface LayoutProps {
 const Layout: React.FC<LayoutProps> = ({ children }) => {
   const location = useLocation();
   const navigate = useNavigate();
-  const { jobs, inventory, customers, serviceProducts, currentUser, logout, updateCurrentUser } = useAppContext();
+  const { jobs, inventory, customers, serviceProducts, currentUser, logout, updateCurrentUser, isAuthenticated, currentOrganization } = useAppContext();
   
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [expandedMenus, setExpandedMenus] = useState<string[]>([]);
@@ -31,22 +31,90 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
   // Help State
   const [isHelpOpen, setIsHelpOpen] = useState(false);
 
-  // User Menu State
-  const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
-  const userMenuRef = useRef<HTMLDivElement>(null);
-  const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
+  // User Menu State (Header)
+  const [isHeaderMenuOpen, setIsHeaderMenuOpen] = useState(false);
+  const headerMenuRef = useRef<HTMLDivElement>(null);
+
+  // Ensure user is logged in
+  useEffect(() => {
+    if (!isAuthenticated) {
+        navigate('/');
+    }
+  }, [isAuthenticated, navigate]);
+
+  // Role Based Navigation Logic
+  const getNavItemsForRole = () => {
+    if (!currentUser) return [];
+
+    const role = currentUser.role;
+
+    // Helper to safely filter children without mutating the original constant deeply
+    const filterChildren = (item: any) => {
+        let newChildren = [...item.children];
+
+        // Filter out General Expenses for Operator and User
+        if (['Operator', 'User'].includes(role) && item.label === 'Expenses') {
+             newChildren = newChildren.filter((child: any) => child.label !== 'General Expenses');
+        }
+        
+        // Reports Filtering
+        if (item.label === 'Reports') {
+             // Filter P&L for User
+             if (role === 'User') {
+                 newChildren = newChildren.filter((child: any) => child.label !== 'Profit & Loss Analysis');
+             }
+             // Filter Audit Trail for basic Users (Allow for Admin/Operator)
+             if (role === 'User') {
+                 newChildren = newChildren.filter((child: any) => child.label !== 'Audit Trail');
+             }
+        }
+        
+        return {
+            ...item,
+            children: newChildren
+        };
+    };
+
+    // Administrator: Sees everything
+    if (role === 'Administrator') return NAV_ITEMS;
+
+    // Operator
+    // Allowed: Sales, Expenses (Restricted), Inventory, Customers, Suppliers, Reports
+    // Hidden: Users, Smart Insights
+    if (role === 'Operator') {
+        return NAV_ITEMS.filter(item => 
+            item.label !== 'Users' && 
+            item.label !== 'Smart Insights'
+        ).map(item => item.children ? filterChildren(item) : item);
+    }
+
+    // User
+    // Allowed: Sales, Expenses (Restricted), Inventory, Customers, Suppliers, Reports (Restricted)
+    // Hidden: Dashboard (Maybe kept for overview?), Users, Smart Insights
+    if (role === 'User') {
+        return NAV_ITEMS.filter(item => {
+             // Hide specific main modules
+             if (['Users', 'Smart Insights'].includes(item.label)) return false;
+             return true;
+        }).map(item => item.children ? filterChildren(item) : item);
+    }
+
+    return [];
+  };
+
+  const navItems = getNavItemsForRole();
 
   // Automatically expand menu if a child is active
   useEffect(() => {
-    NAV_ITEMS.forEach(item => {
+    navItems.forEach(item => {
       if (item.children) {
-        const isChildActive = item.children.some(child => child.path === location.pathname);
+        const isChildActive = item.children.some((child: any) => child.path === location.pathname);
         if (isChildActive && !expandedMenus.includes(item.label)) {
           setExpandedMenus(prev => [...prev, item.label]);
         }
       }
     });
-  }, [location.pathname]);
+  }, [location.pathname, navItems]);
 
   // Click outside to close dropdowns
   useEffect(() => {
@@ -57,8 +125,8 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
       if (notificationRef.current && !notificationRef.current.contains(event.target as Node)) {
         setShowNotifications(false);
       }
-      if (userMenuRef.current && !userMenuRef.current.contains(event.target as Node)) {
-        setIsUserMenuOpen(false);
+      if (headerMenuRef.current && !headerMenuRef.current.contains(event.target as Node)) {
+        setIsHeaderMenuOpen(false);
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
@@ -123,31 +191,35 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
   
   const notificationCount = lowStock.length + pendingJobs.length + unpaidInvoices.length;
 
+  if (!isAuthenticated) return null;
+
   return (
     <div className="flex h-screen bg-slate-50 overflow-hidden">
-      {/* Sidebar */}
+      {/* Sidebar - Using bg-blue-800 for stronger color theming */}
       <aside className={`
-        fixed inset-y-0 left-0 z-50 w-64 bg-slate-900 text-white transform transition-transform duration-200 ease-in-out flex flex-col h-full
+        fixed inset-y-0 left-0 z-50 w-64 bg-blue-800 text-white transform transition-transform duration-200 ease-in-out flex flex-col h-full
         ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'} 
         md:relative md:translate-x-0
       `}>
-        <div className="p-6 border-b border-slate-700 flex items-center gap-3 shrink-0">
-          <div className="w-8 h-8 bg-blue-500 rounded-lg flex items-center justify-center font-bold text-white text-xl">
-            S
+        <div className="p-6 border-b border-blue-700 flex items-center gap-3 shrink-0">
+          <div className="w-10 h-10 bg-white/10 text-white rounded-xl flex items-center justify-center font-bold text-lg shadow-lg border border-white/20">
+            {currentOrganization?.name?.substring(0, 2).toUpperCase() || 'SM'}
           </div>
-          <div>
-            <h1 className="text-lg font-bold tracking-tight">Shop Manager 360</h1>
-            <p className="text-xs text-slate-400">Ops & Finance</p>
+          <div className="overflow-hidden">
+            <h1 className="text-sm font-bold tracking-tight truncate leading-tight">
+                {currentOrganization?.name || 'Shop Manager'}
+            </h1>
+            <p className="text-[10px] text-blue-200 mt-0.5 truncate uppercase tracking-wider">{currentOrganization?.type || 'System'} Manager</p>
           </div>
         </div>
         
         <nav className="p-4 space-y-1 flex-1 overflow-y-auto sidebar-scroll">
-          {NAV_ITEMS.map((item) => {
+          {navItems.map((item: any) => {
             const Icon = item.icon;
             
             if (item.children) {
               const isExpanded = expandedMenus.includes(item.label);
-              const isActiveParent = item.children.some(child => child.path === location.pathname);
+              const isActiveParent = item.children.some((child: any) => child.path === location.pathname);
               
               return (
                 <div key={item.label} className="mb-1">
@@ -155,7 +227,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                     onClick={() => toggleMenu(item.label)}
                     className={`
                       w-full flex items-center justify-between px-4 py-3 rounded-lg text-sm font-medium transition-colors
-                      ${isActiveParent ? 'text-white bg-slate-800' : 'text-slate-400 hover:text-white hover:bg-slate-800'}
+                      ${isActiveParent ? 'text-white bg-blue-700' : 'text-white/70 hover:text-white hover:bg-blue-700'}
                     `}
                   >
                     <div className="flex items-center gap-3">
@@ -166,8 +238,8 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                   </button>
                   
                   {isExpanded && (
-                    <div className="mt-1 ml-4 border-l border-slate-700 pl-4 space-y-1">
-                      {item.children.map((child) => {
+                    <div className="mt-1 ml-4 border-l border-blue-700 pl-4 space-y-1">
+                      {item.children.map((child: any) => {
                         const isChildActive = location.pathname === child.path;
                         return (
                           <Link
@@ -176,8 +248,8 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                             className={`
                               block py-2 px-3 text-sm rounded-md transition-colors
                               ${isChildActive 
-                                ? 'text-blue-400 font-medium bg-slate-800/50' 
-                                : 'text-slate-500 hover:text-slate-300 hover:bg-slate-800/30'}
+                                ? 'text-white font-medium bg-white/10' 
+                                : 'text-white/60 hover:text-white hover:bg-white/5'}
                             `}
                             onClick={() => setIsMobileMenuOpen(false)}
                           >
@@ -200,7 +272,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                   flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-colors
                   ${isActive 
                     ? 'bg-blue-600 text-white shadow-md' 
-                    : 'text-slate-400 hover:text-white hover:bg-slate-800'
+                    : 'text-white/70 hover:text-white hover:bg-blue-700'
                   }
                 `}
                 onClick={() => setIsMobileMenuOpen(false)}
@@ -212,52 +284,17 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
           })}
         </nav>
 
-        {/* User Profile Footer */}
-        <div className="p-4 border-t border-slate-800 shrink-0 relative" ref={userMenuRef}>
-          
-          {isUserMenuOpen && (
-              <div className="absolute bottom-full left-4 right-4 mb-2 bg-slate-800 rounded-xl shadow-xl border border-slate-700 overflow-hidden animate-in slide-in-from-bottom-2 fade-in z-50">
-                  <button 
-                    onClick={() => { setIsSettingsModalOpen(true); setIsUserMenuOpen(false); }} 
-                    className="w-full text-left px-4 py-3 text-sm text-slate-300 hover:bg-slate-700 hover:text-white flex items-center gap-3 transition-colors"
-                  >
-                      <Settings size={16} /> Account Settings
-                  </button>
-                  <div className="border-t border-slate-700 my-1"></div>
-                  <button 
-                    onClick={logout} 
-                    className="w-full text-left px-4 py-3 text-sm text-red-400 hover:bg-slate-700 hover:text-red-300 flex items-center gap-3 transition-colors"
-                  >
-                      <LogOut size={16} /> Sign Out
-                  </button>
-              </div>
-          )}
-
-          <button 
-            onClick={() => setIsUserMenuOpen(!isUserMenuOpen)}
-            className="flex items-center gap-3 w-full p-2 rounded-lg hover:bg-slate-800 transition-colors text-left group"
-          >
-            <div className="w-10 h-10 rounded-full bg-slate-700 flex items-center justify-center overflow-hidden border-2 border-slate-600 group-hover:border-slate-500 transition-colors">
-               {currentUser?.photo ? (
-                 <img src={currentUser.photo} alt={currentUser.username} className="w-full h-full object-cover"/>
-               ) : (
-                 <span className="text-sm font-bold text-white">
-                    {currentUser?.firstName?.[0]}{currentUser?.lastName?.[0]}
-                 </span>
-               )}
+        {/* Branding Footer */}
+        <div className="p-4 border-t border-blue-700 shrink-0">
+          <div className="flex items-center gap-3 px-2">
+            <div className="w-8 h-8 bg-blue-700 border border-blue-600 rounded-lg flex items-center justify-center font-bold text-white text-xs shadow-inner">
+              360
             </div>
-            <div className="flex-1 min-w-0">
-               <p className="text-sm font-medium text-white truncate">
-                 {currentUser?.firstName} {currentUser?.lastName}
-               </p>
-               <div className="flex items-center gap-1 text-xs text-slate-400">
-                  <span className="truncate">{currentUser?.role}</span>
-                  <span>•</span>
-                  <span className="truncate">@{currentUser?.username}</span>
-               </div>
+            <div>
+              <h3 className="font-bold text-white text-sm leading-none">ShopManager 360</h3>
+              <p className="text-[10px] text-blue-200 mt-1 font-mono">Version 1.0.0</p>
             </div>
-            <ChevronUp size={16} className={`text-slate-500 transition-transform duration-200 ${isUserMenuOpen ? 'rotate-180' : ''}`}/>
-          </button>
+          </div>
         </div>
       </aside>
 
@@ -285,7 +322,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                       }}
                       onKeyDown={handleSearchSubmit}
                       onFocus={() => setShowDropdown(true)}
-                      placeholder="Search jobs, inventory, customers..." 
+                      placeholder="Search sales, inventory, customers..." 
                       className="bg-transparent border-none outline-none text-sm w-full placeholder:text-slate-400"
                     />
                 </div>
@@ -299,7 +336,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                            {previewResults.jobs.length > 0 && (
                              <div className="px-2 mb-2">
                                <h4 className="px-3 py-1 text-xs font-bold text-slate-400 uppercase">Sales</h4>
-                               {previewResults.jobs.map(j => (
+                               {previewResults.jobs.map((j: any) => (
                                  <button 
                                    key={j.id}
                                    onClick={() => { navigate(`/sales/${j.saleType === 'Credit' ? 'credit' : 'cash'}`); setShowDropdown(false); }}
@@ -319,7 +356,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                            {previewResults.inventory.length > 0 && (
                              <div className="px-2 mb-2">
                                <h4 className="px-3 py-1 text-xs font-bold text-slate-400 uppercase">Stock</h4>
-                               {previewResults.inventory.map(i => (
+                               {previewResults.inventory.map((i: any) => (
                                  <button 
                                    key={i.id}
                                    onClick={() => { navigate('/inventory'); setShowDropdown(false); }}
@@ -339,7 +376,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                            {previewResults.customers.length > 0 && (
                              <div className="px-2 mb-2">
                                <h4 className="px-3 py-1 text-xs font-bold text-slate-400 uppercase">Customers</h4>
-                               {previewResults.customers.map(c => (
+                               {previewResults.customers.map((c: any) => (
                                  <button 
                                    key={c.id}
                                    onClick={() => { navigate('/customers'); setShowDropdown(false); }}
@@ -372,6 +409,15 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
             </div>
 
             <div className="flex items-center gap-4">
+                {/* Org Indicator (Mobile/Tablet) */}
+                <div className="md:hidden flex items-center gap-2 bg-slate-100 rounded-full px-3 py-1">
+                    <Building size={14} className="text-slate-500"/>
+                    <span className="text-xs font-bold text-slate-700 truncate max-w-[100px]">{currentOrganization?.name}</span>
+                </div>
+
+                {/* Theme Picker */}
+                <ThemePicker />
+
                 {/* Global Help Button */}
                 <button 
                   className="p-2 text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-full transition-colors shadow-sm"
@@ -463,13 +509,49 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                     )}
                 </div>
 
-                <button 
-                  onClick={() => setIsSettingsModalOpen(true)}
-                  className="p-1 text-slate-400 hover:text-blue-600 transition-colors"
-                  title="Profile Settings"
-                >
-                  <UserCircle size={28} />
-                </button>
+                {/* Header User Profile & Dropdown */}
+                <div className="relative" ref={headerMenuRef}>
+                    <button 
+                      onClick={() => setIsHeaderMenuOpen(!isHeaderMenuOpen)}
+                      className="flex items-center gap-2 hover:bg-slate-50 p-1.5 rounded-lg transition-colors border border-transparent hover:border-slate-200"
+                    >
+                      <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-700 font-bold text-xs border border-blue-200 overflow-hidden">
+                          {currentUser?.photo ? (
+                            <img src={currentUser.photo} alt="Profile" className="w-full h-full object-cover"/>
+                          ) : (
+                            <span>{currentUser?.firstName?.[0]}{currentUser?.lastName?.[0]}</span>
+                          )}
+                      </div>
+                      <div className="hidden md:block text-right">
+                          <p className="text-xs font-bold text-slate-700 leading-none">{currentUser?.firstName} {currentUser?.lastName}</p>
+                          <p className="text-xs text-slate-500 leading-none mt-0.5">{currentUser?.role}</p>
+                      </div>
+                      <ChevronDown size={14} className={`text-slate-400 transition-transform duration-200 ${isHeaderMenuOpen ? 'rotate-180' : ''}`} />
+                    </button>
+
+                    {isHeaderMenuOpen && (
+                        <div className="absolute right-0 top-full mt-2 w-56 bg-white rounded-xl shadow-xl border border-slate-100 overflow-hidden z-50 animate-in fade-in slide-in-from-top-2">
+                            <div className="p-3 border-b border-slate-50 bg-slate-50/50">
+                                <p className="text-sm font-bold text-slate-800">{currentUser?.firstName} {currentUser?.lastName}</p>
+                                <p className="text-xs text-slate-500">@{currentUser?.username}</p>
+                            </div>
+                            <div className="p-1">
+                                <button 
+                                    onClick={() => { navigate('/settings'); setIsHeaderMenuOpen(false); }}
+                                    className="w-full text-left px-3 py-2 text-sm text-slate-600 hover:bg-blue-50 hover:text-blue-700 rounded-lg flex items-center gap-2 transition-colors"
+                                >
+                                    <Settings size={16} /> Account Settings
+                                </button>
+                                <button 
+                                    onClick={logout}
+                                    className="w-full text-left px-3 py-2 text-sm text-red-600 hover:bg-red-50 rounded-lg flex items-center gap-2 transition-colors"
+                                >
+                                    <LogOut size={16} /> Sign Out
+                                </button>
+                            </div>
+                        </div>
+                    )}
+                </div>
             </div>
         </header>
 
@@ -484,16 +566,6 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
       {/* Global Help Drawer */}
       <GlobalHelp isOpen={isHelpOpen} onClose={() => setIsHelpOpen(false)} />
       
-      {/* User Settings Modal */}
-      {currentUser && (
-        <UserSettingsModal 
-            isOpen={isSettingsModalOpen} 
-            onClose={() => setIsSettingsModalOpen(false)}
-            user={currentUser}
-            onUpdate={updateCurrentUser}
-        />
-      )}
-
       {/* Mobile Overlay */}
       {isMobileMenuOpen && (
         <div 

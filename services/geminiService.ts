@@ -1,5 +1,6 @@
+
 import { GoogleGenAI } from "@google/genai";
-import { PrintJob, Transaction, InventoryItem } from "../types";
+import { PrintJob, Transaction, InventoryItem, Customer, Supplier } from "../types";
 
 // Initialize Gemini
 // CRITICAL: process.env.API_KEY is assumed to be available.
@@ -16,7 +17,7 @@ export const generateBusinessInsights = async (
 
   const jobSummary = jobs.map(j => `${j.title} (${j.status}) - ${j.priority}`).join(', ');
   const lowStock = inventory.filter(i => i.quantity <= i.threshold).map(i => i.name).join(', ');
-  const recentSales = transactions.filter(t => t.type === 'Income').slice(0, 5).map(t => `$${t.amount}`).join(', ');
+  const recentSales = transactions.filter(t => t.type === 'Income').slice(0, 5).map(t => `KSh ${t.amount}`).join(', ');
 
   const prompt = `
     You are a smart business assistant for "Shop Manager 360", a shop.
@@ -63,3 +64,52 @@ export const generateCustomerEmail = async (job: PrintJob, customerName: string)
         return "Error generating draft.";
     }
 }
+
+export const generateNotificationDraft = async (
+    recipient: Customer | Supplier,
+    type: 'Customer' | 'Supplier',
+    template: string
+): Promise<{ subject: string; body: string }> => {
+    if (!process.env.API_KEY) return { subject: "Error", body: "API Key missing." };
+
+    let context = "";
+    
+    if (type === 'Customer') {
+        const c = recipient as Customer;
+        context = `Customer: ${c.name}. Balance Due: KSh ${c.balance}. Total Spent: KSh ${c.totalSpent}.`;
+    } else {
+        const s = recipient as Supplier;
+        context = `Supplier: ${s.name}. Category: ${s.category}. Contact: ${s.contactPerson}.`;
+    }
+
+    const prompt = `
+        You are an AI assistant for "Shop Manager 360".
+        Generate a professional email subject and body based on the following context and template type.
+        
+        Context: ${context}
+        Template Type: ${template}
+        
+        Instructions:
+        1. If template is "Late Payment", be firm but polite about the outstanding balance.
+        2. If template is "Statement", provide a summary cover letter attached to a statement.
+        3. If template is "New Order", ask for a quotation for restocking items in their category.
+        4. If template is "Marketing", thank them for being a loyal partner/customer.
+        
+        Return the response strictly as a JSON object with keys "subject" and "body".
+        Do not include markdown code blocks.
+    `;
+
+    try {
+        const response = await ai.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: prompt,
+            config: { responseMimeType: "application/json" }
+        });
+        
+        const text = response.text || "{}";
+        return JSON.parse(text);
+    } catch (e) {
+        console.error(e);
+        return { subject: "Draft Generation Failed", body: "Please try again manually." };
+    }
+};

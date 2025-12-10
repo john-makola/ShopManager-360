@@ -16,13 +16,14 @@ import {
   X,
   FileText,
   Info,
-  Download
+  Download,
+  Image as ImageIcon
 } from "lucide-react";
 import { generatePDFReport, openPDFWindow } from "../utils/pdfUtils";
 import { exportToCSV } from "../utils/exportUtils";
 
 const ServicesProducts = () => {
-  const { serviceProducts, addServiceProduct, updateServiceProduct, deleteServiceProduct } = useAppContext();
+  const { serviceProducts, addServiceProduct, updateServiceProduct, deleteServiceProduct, currentOrganization } = useAppContext();
   const navigate = useNavigate();
 
   // State
@@ -45,6 +46,7 @@ const ServicesProducts = () => {
     unit: "",
     size: "",
     description: "",
+    image: "",
   });
 
   // Filter Logic
@@ -80,6 +82,7 @@ const ServicesProducts = () => {
         unit: item.unit,
         size: item.size || "",
         description: item.description,
+        image: item.image || "",
       });
     } else {
       setEditingItem(null);
@@ -92,6 +95,7 @@ const ServicesProducts = () => {
         unit: "",
         size: "",
         description: "",
+        image: "",
       });
     }
     setIsAddModalOpen(true);
@@ -107,6 +111,7 @@ const ServicesProducts = () => {
 
     const item: ServiceProduct = {
       id: editingItem ? editingItem.id : Math.random().toString(36).substr(2, 9),
+      organizationId: editingItem?.organizationId || '',
       code: formData.code,
       name: formData.name,
       type: formData.type,
@@ -115,6 +120,7 @@ const ServicesProducts = () => {
       unit: formData.unit || "unit",
       size: formData.size,
       description: formData.description,
+      image: formData.image,
       createdAt: editingItem ? editingItem.createdAt : new Date().toISOString(),
     };
 
@@ -275,7 +281,7 @@ const ServicesProducts = () => {
     ` : "";
 
     const content = summaryHTML + servicesHTML + productsHTML;
-    const html = generatePDFReport({ title: "Services Catalog", content });
+    const html = generatePDFReport({ title: "Services Catalog", content, organization: currentOrganization });
     openPDFWindow(html);
   };
 
@@ -293,7 +299,7 @@ const ServicesProducts = () => {
           <div>
             <div className="flex items-center gap-2">
                 <h1 className="text-2xl font-bold bg-gradient-to-r from-blue-600 via-purple-600 to-pink-600 bg-clip-text text-transparent">
-                Services
+                Services & Products
                 </h1>
                 <button 
                     onClick={() => setShowInfo(!showInfo)} 
@@ -433,6 +439,7 @@ const ServicesProducts = () => {
           <table className="w-full text-left">
             <thead className="bg-slate-50 border-b border-slate-200">
               <tr>
+                <th className="px-6 py-4 text-xs font-semibold text-slate-500 uppercase w-20">Image</th>
                 <th className="px-6 py-4 text-xs font-semibold text-slate-500 uppercase">Type</th>
                 <th className="px-6 py-4 text-xs font-semibold text-slate-500 uppercase">Code</th>
                 <th className="px-6 py-4 text-xs font-semibold text-slate-500 uppercase">Name</th>
@@ -446,7 +453,7 @@ const ServicesProducts = () => {
             <tbody className="divide-y divide-slate-100">
               {filteredItems.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="px-6 py-12 text-center text-slate-500">
+                  <td colSpan={9} className="px-6 py-12 text-center text-slate-500">
                     <div className="flex flex-col items-center gap-2">
                        <Package size={32} className="text-slate-300"/>
                        <p>No items found.</p>
@@ -456,6 +463,17 @@ const ServicesProducts = () => {
               ) : (
                 filteredItems.map((item) => (
                   <tr key={item.id} className="hover:bg-slate-50 transition-colors">
+                    <td className="px-6 py-4">
+                        <div className="w-10 h-10 rounded-lg bg-slate-100 overflow-hidden border border-slate-200">
+                            {item.image ? (
+                                <img src={item.image} alt="" className="w-full h-full object-cover" />
+                            ) : (
+                                <div className="w-full h-full flex items-center justify-center text-slate-400">
+                                    {item.type === "service" ? <Briefcase size={16} /> : <Package size={16} />}
+                                </div>
+                            )}
+                        </div>
+                    </td>
                     <td className="px-6 py-4">
                       <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium border ${
                         item.type === "service" 
@@ -519,6 +537,19 @@ const ServicesProducts = () => {
                   <option value="service">Service</option>
                   <option value="product">Product</option>
                 </select>
+              </div>
+
+              <div className="space-y-2">
+                <label className="block text-xs font-bold text-slate-500 uppercase">Image URL (Optional)</label>
+                <div className="relative">
+                    <ImageIcon className="absolute left-3 top-2.5 text-slate-400" size={16} />
+                    <input
+                    placeholder="https://example.com/image.jpg"
+                    value={formData.image}
+                    onChange={(e) => setFormData({ ...formData, image: e.target.value })}
+                    className="w-full pl-10 pr-3 py-2 border border-slate-300 rounded-lg text-sm focus:border-blue-500 outline-none"
+                    />
+                </div>
               </div>
 
               <div className="space-y-2">

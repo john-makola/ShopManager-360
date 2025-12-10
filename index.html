@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en">
   <head>
@@ -7,9 +8,17 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <style>
+      :root {
+        /* Default Theme (Classic Blue/Slate) */
+        --primary-hue: 221;
+        --primary-sat: 83%;
+        --neutral-hue: 215;
+        --neutral-sat: 25%;
+      }
+
       body {
         font-family: 'Inter', sans-serif;
-        background-color: #f8fafc;
+        background-color: hsl(var(--neutral-hue) var(--neutral-sat) 97%); /* Slate-50 equivalent */
       }
       /* Custom Scrollbar - Default Light */
       ::-webkit-scrollbar {
@@ -27,18 +36,56 @@
         background: #94a3b8;
       }
 
-      /* Dark Scrollbar for Sidebar */
+      /* Dark Scrollbar for Sidebar - Matches bg-blue-800 (20% Lightness) */
       .sidebar-scroll::-webkit-scrollbar-track {
-        background: #0f172a; /* slate-900 */
+        background: hsl(var(--primary-hue) var(--primary-sat) 20%); 
       }
       .sidebar-scroll::-webkit-scrollbar-thumb {
-        background: #334155; /* slate-700 */
+        background: hsl(var(--primary-hue) var(--primary-sat) 40%); /* Lighter for visibility */
         border-radius: 4px;
       }
       .sidebar-scroll::-webkit-scrollbar-thumb:hover {
-        background: #475569; /* slate-600 */
+        background: hsl(var(--primary-hue) var(--primary-sat) 50%);
       }
     </style>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            colors: {
+              // Override 'blue' to be our Primary Brand Color
+              blue: {
+                50: 'hsl(var(--primary-hue) var(--primary-sat) 95%)',
+                100: 'hsl(var(--primary-hue) var(--primary-sat) 90%)',
+                200: 'hsl(var(--primary-hue) var(--primary-sat) 80%)',
+                300: 'hsl(var(--primary-hue) var(--primary-sat) 70%)',
+                400: 'hsl(var(--primary-hue) var(--primary-sat) 60%)',
+                500: 'hsl(var(--primary-hue) var(--primary-sat) 50%)',
+                600: 'hsl(var(--primary-hue) var(--primary-sat) 45%)',
+                700: 'hsl(var(--primary-hue) var(--primary-sat) 35%)',
+                800: 'hsl(var(--primary-hue) var(--primary-sat) 20%)',
+                900: 'hsl(var(--primary-hue) var(--primary-sat) 10%)',
+                950: 'hsl(var(--primary-hue) var(--primary-sat) 5%)',
+              },
+              // Override 'slate' to be our Neutral/Base Color
+              slate: {
+                50: 'hsl(var(--neutral-hue) var(--neutral-sat) 97%)',
+                100: 'hsl(var(--neutral-hue) var(--neutral-sat) 94%)',
+                200: 'hsl(var(--neutral-hue) var(--neutral-sat) 86%)',
+                300: 'hsl(var(--neutral-hue) var(--neutral-sat) 77%)',
+                400: 'hsl(var(--neutral-hue) var(--neutral-sat) 66%)',
+                500: 'hsl(var(--neutral-hue) var(--neutral-sat) 50%)',
+                600: 'hsl(var(--neutral-hue) var(--neutral-sat) 40%)',
+                700: 'hsl(var(--neutral-hue) var(--neutral-sat) 30%)',
+                800: 'hsl(var(--neutral-hue) var(--neutral-sat) 20%)',
+                900: 'hsl(var(--neutral-hue) var(--neutral-sat) 10%)',
+                950: 'hsl(var(--neutral-hue) var(--neutral-sat) 5%)',
+              }
+            }
+          }
+        }
+      }
+    </script>
   <script type="importmap">
 {
   "imports": {

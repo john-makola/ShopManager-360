@@ -1,722 +1,461 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAppContext } from '../contexts/AppContext';
-import { ExpenseItem } from '../types';
-import { Plus, Search, Filter, Edit, Trash2, Printer, Upload, Receipt, X, AlertCircle, Info } from 'lucide-react';
-import { generatePDFReport, openPDFWindow } from '../utils/pdfUtils';
+import { ExpenseItem, Transaction, Supplier, InventoryItem } from '../types';
+import { Plus, Search, Edit, Trash2, CheckSquare, Square, CheckCircle, Printer, X } from 'lucide-react';
+import { openPDFWindow } from '../utils/pdfUtils';
 
 const Expenses: React.FC = () => {
-  const { expenseItems, addExpenseItem, updateExpenseItem, deleteExpenseItem } = useAppContext();
+  const { 
+    expenseItems, addExpenseItem, updateExpenseItem, deleteExpenseItem,
+    suppliers, addSupplier, inventory, addInventoryItem, updateInventoryItem,
+    addTransaction, currentOrganization
+  } = useAppContext();
   
-  // UI State
   const [searchQuery, setSearchQuery] = useState('');
   const [filterCategory, setFilterCategory] = useState('all');
-  const [showInfo, setShowInfo] = useState(false);
-  
-  // Modal States
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
-  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
-  const [isPrintModalOpen, setIsPrintModalOpen] = useState(false);
-  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [showSuccess, setShowSuccess] = useState(false);
   
-  const [editingItem, setEditingItem] = useState<ExpenseItem | null>(null);
-  const [itemToDelete, setItemToDelete] = useState<ExpenseItem | null>(null);
-  
-  // Print State
-  const [printStartDate, setPrintStartDate] = useState('');
-  const [printEndDate, setPrintEndDate] = useState('');
+  // New Complex Form State
+  const initialFormState = {
+      expenseNo: '',
+      supplierId: '',
+      newSupplierName: '',
+      saveSupplier: false,
+      item: '',
+      description: '',
+      category: 'Stock', // Default
+      orderDate: new Date().toISOString().split('T')[0],
+      units: '',
+      costPerUnit: '',
+      total: 0,
+      paymentAmount: '',
+      balance: 0,
+      datePaid: '',
+      dateDue: '',
+      status: 'Pending' as 'Pending' | 'Received',
+      paymentMethod: 'Bank' as 'Cash' | 'Card' | 'Bank' | 'M-PESA'
+  };
 
-  // Import State
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [uploading, setUploading] = useState(false);
-  
-  // Form State
-  const [formData, setFormData] = useState({
-    code: '',
-    description: '',
-    category: '',
-    size: '',
-    units: '1',
-    costPerUnit: '',
-  });
+  const [formData, setFormData] = useState(initialFormState);
+  const [editingItem, setEditingItem] = useState<ExpenseItem | null>(null);
 
   const categories = [
-    'DIGITAL PRINTING',
-    'LARGE FORMAT PRINTING',
-    'COPY SERVICES',
-    'BRANDING SERVICES',
-    'GRAPHIC DESIGN SERVICES EXPENSES',
-    'FINISHING SERVICES EXPENSES',
-    'PACKAGING SOLUTIONS EXPENSES',
-    'SPECIALIZED PRINTING EXPENSES'
+    'Stock',
+    'Logistics',
+    'Packaging',
+    'Inventory Purchase'
   ];
 
-  const prefixMap: Record<string, string> = {
-    "DIGITAL PRINTING": "DP",
-    "LARGE FORMAT PRINTING": "LF",
-    "COPY SERVICES": "CS",
-    "BRANDING SERVICES": "BS",
-    "GRAPHIC DESIGN SERVICES EXPENSES": "GD",
-    "FINISHING SERVICES EXPENSES": "FS",
-    "PACKAGING SOLUTIONS EXPENSES": "PS",
-    "SPECIALIZED PRINTING EXPENSES": "SP",
-  };
+  // Auto-generate Expense No
+  useEffect(() => {
+      if (isAddModalOpen && !editingItem && !showSuccess) {
+          setFormData(prev => ({
+              ...prev,
+              expenseNo: `PO-${Math.floor(Math.random() * 10000).toString().padStart(4, '0')}`
+          }));
+      }
+  }, [isAddModalOpen, editingItem, showSuccess]);
 
-  // Helper to auto-generate code
-  const generateCode = (category: string) => {
-    const prefix = prefixMap[category] || "XX";
-    const existingCodes = expenseItems
-      .filter(e => e.category === category && e.code.startsWith(prefix))
-      .map(e => {
-        const match = e.code.match(/\d+$/);
-        return match ? parseInt(match[0]) : 0;
-      });
-    
-    const nextNum = existingCodes.length > 0 ? Math.max(...existingCodes) + 1 : 1;
-    return `${prefix}${String(nextNum).padStart(3, "0")}`;
-  };
+  // Calculations
+  useEffect(() => {
+      const units = parseFloat(formData.units) || 0;
+      const cost = parseFloat(formData.costPerUnit) || 0;
+      const total = units * cost;
+      const paid = parseFloat(formData.paymentAmount) || 0;
+      setFormData(prev => ({ ...prev, total, balance: Math.max(0, total - paid) }));
+  }, [formData.units, formData.costPerUnit, formData.paymentAmount]);
 
-  // Filtering
   const filteredItems = expenseItems.filter(item => {
-    const matchesSearch = 
-      item.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      item.code.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesSearch = item.description.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesCategory = filterCategory === 'all' || item.category === filterCategory;
     return matchesSearch && matchesCategory;
   });
 
-  // Handlers
-  const handleOpenAddModal = (item?: ExpenseItem) => {
-    if (item) {
-      setEditingItem(item);
-      setFormData({
-        code: item.code,
-        description: item.description,
-        category: item.category,
-        size: item.size,
-        units: String(item.units),
-        costPerUnit: String(item.costPerUnit)
-      });
-    } else {
-      setEditingItem(null);
-      const defaultCat = categories[0];
-      setFormData({
-        code: generateCode(defaultCat),
-        description: '',
-        category: defaultCat,
-        size: '',
-        units: '1',
-        costPerUnit: ''
-      });
-    }
+  const handleOpenAddModal = () => {
+    setEditingItem(null);
+    setFormData(initialFormState);
+    setShowSuccess(false);
     setIsAddModalOpen(true);
   };
 
-  const handleCategoryChange = (newCategory: string) => {
-    // If we are editing, don't auto-regenerate code unless user clears it? 
-    // Usually code shouldn't change on edit easily. 
-    // But for new items, we regenerate.
-    if (!editingItem) {
-        setFormData({
-            ...formData,
-            category: newCategory,
-            code: generateCode(newCategory)
-        });
-    } else {
-        setFormData({
-            ...formData,
-            category: newCategory
-        });
-    }
+  const handleOpenEditModal = (item: ExpenseItem) => {
+      setEditingItem(item);
+      // Map existing item to form (Simplified mapping as ExpenseItem schema is smaller than the new form)
+      setFormData({
+          ...initialFormState,
+          item: item.description, // Assuming description holds name
+          description: item.description,
+          category: item.category,
+          units: item.units.toString(),
+          costPerUnit: item.costPerUnit.toString(),
+          orderDate: item.createdAt ? item.createdAt.split('T')[0] : new Date().toISOString().split('T')[0],
+          // Other fields are not persisted in simple ExpenseItem schema, would require DB schema update
+          // For now, we allow editing basic fields
+      });
+      setShowSuccess(false);
+      setIsAddModalOpen(true);
+  };
+
+  const handleClose = () => {
+      setIsAddModalOpen(false);
+      setShowSuccess(false);
+  };
+
+  const handleAddNew = () => {
+      setEditingItem(null);
+      setFormData(initialFormState);
+      setFormData(prev => ({
+          ...prev,
+          expenseNo: `PO-${Math.floor(Math.random() * 10000).toString().padStart(4, '0')}`
+      }));
+      setShowSuccess(false);
   };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!formData.description || !formData.costPerUnit) {
-        alert("Please fill in required fields.");
-        return;
+    // 1. Handle Supplier
+    let finalSupplierId = formData.supplierId;
+    if (!finalSupplierId && formData.newSupplierName) {
+        // Create new supplier
+        const newSup: Omit<Supplier, 'organizationId'> = {
+            id: Math.random().toString(36).substr(2, 9),
+            name: formData.newSupplierName,
+            contactPerson: '', email: '', phone: '', category: 'General'
+        };
+        if (formData.saveSupplier) {
+            addSupplier(newSup);
+        }
+        finalSupplierId = newSup.id; // Or name if ID not used strictly
     }
 
+    // 2. Handle Inventory Update if Received
+    if (formData.status === 'Received') {
+        const existingInv = inventory.find(i => i.name.toLowerCase() === formData.item.toLowerCase());
+        if (existingInv) {
+            updateInventoryItem({
+                ...existingInv,
+                quantity: existingInv.quantity + (parseFloat(formData.units) || 0),
+                costPrice: parseFloat(formData.costPerUnit) || existingInv.costPrice // Update cost price?
+            });
+        }
+    }
+
+    // 3. Create Financial Transaction
+    const paidAmount = parseFloat(formData.paymentAmount) || 0;
+    if (paidAmount > 0) {
+        addTransaction({
+            id: Math.random().toString(36).substr(2, 9),
+            type: 'Expense',
+            category: 'Stock Purchase',
+            amount: paidAmount, // Record what was paid now
+            date: formData.datePaid || formData.orderDate,
+            description: `Stock Purchase: ${formData.item} (${formData.units} units)`,
+            paymentMethod: formData.paymentMethod, // Uses selected method
+            supplierId: finalSupplierId
+        });
+    }
+
+    // 4. Save to Expense Catalog (The list view)
     const itemData: ExpenseItem = {
       id: editingItem ? editingItem.id : Math.random().toString(36).substr(2, 9),
-      code: formData.code,
-      description: formData.description,
+      organizationId: editingItem?.organizationId || '',
+      code: formData.expenseNo,
+      description: formData.item,
       category: formData.category,
-      size: formData.size,
+      size: '',
       units: Number(formData.units) || 1,
       costPerUnit: Number(formData.costPerUnit) || 0,
-      createdAt: editingItem ? editingItem.createdAt : new Date().toISOString()
+      createdAt: formData.orderDate ? new Date(formData.orderDate).toISOString() : new Date().toISOString()
     };
 
-    if (editingItem) {
-      updateExpenseItem(itemData);
-    } else {
-      addExpenseItem(itemData);
-    }
-    setIsAddModalOpen(false);
-  };
-
-  const handleDeleteClick = (item: ExpenseItem) => {
-    setItemToDelete(item);
-    setIsDeleteModalOpen(true);
-  };
-
-  const confirmDelete = () => {
-    if (itemToDelete) {
-        deleteExpenseItem(itemToDelete.id);
-        setItemToDelete(null);
-        setIsDeleteModalOpen(false);
-    }
-  };
-
-  // Import Handler
-  const handleFileUpload = async () => {
-    if (!selectedFile) return;
-    setUploading(true);
+    if (editingItem) updateExpenseItem(itemData); else addExpenseItem(itemData);
     
-    try {
-        const text = await selectedFile.text();
-        const json = JSON.parse(text);
-        
-        if (json.categories) {
-            let count = 0;
-            // Iterate structure provided in example
-            // categories -> KEY -> expenses -> KEY -> obj
-            Object.values(json.categories).forEach((catData: any) => {
-                const expenses = catData.expenses || {};
-                Object.entries(expenses).forEach(([code, expData]: [string, any]) => {
-                    addExpenseItem({
-                        id: Math.random().toString(36).substr(2, 9),
-                        code: code,
-                        description: expData.description,
-                        category: catData.name || "Imported", // Simplified extraction
-                        size: expData.size || "",
-                        units: expData.units || 1,
-                        costPerUnit: expData.costPerUnit || 0,
-                        createdAt: new Date().toISOString()
-                    });
-                    count++;
-                });
-            });
-            alert(`Imported ${count} items successfully.`);
-        } else {
-            alert("Invalid JSON format.");
-        }
-    } catch (e) {
-        console.error(e);
-        alert("Failed to parse JSON file.");
-    } finally {
-        setUploading(false);
-        setIsImportModalOpen(false);
-        setSelectedFile(null);
-    }
+    setShowSuccess(true);
   };
 
-  // Print Handler
-  const handlePrintPDF = () => {
-    if (!printStartDate || !printEndDate) {
-        alert("Please select a date range.");
-        return;
-    }
-
-    const start = new Date(printStartDate);
-    const end = new Date(printEndDate);
-    end.setHours(23, 59, 59);
-
-    const reportItems = expenseItems.filter(item => {
-        const d = new Date(item.createdAt);
-        return d >= start && d <= end;
-    });
-
-    if (reportItems.length === 0) {
-        alert("No items found in date range.");
-        return;
-    }
-
-    // Group by category
-    const byCategory = reportItems.reduce((acc, item) => {
-        if (!acc[item.category]) acc[item.category] = [];
-        acc[item.category].push(item);
-        return acc;
-    }, {} as Record<string, ExpenseItem[]>);
-
-    const totalCost = reportItems.reduce((sum, i) => sum + (i.units * i.costPerUnit), 0);
-
-    let htmlContent = `
-        <div class="totals-grid">
-            <div class="total-card">
-                <div class="total-label">Total Items</div>
-                <div class="total-value neutral">${reportItems.length}</div>
+  const handlePrintCurrent = () => {
+      const supplierName = formData.newSupplierName || suppliers.find(s => s.id === formData.supplierId)?.name || 'N/A';
+      const html = `
+        <!DOCTYPE html>
+        <html>
+          <head>
+            <title>Purchase Order ${formData.expenseNo}</title>
+            <style>
+              body { font-family: 'Courier New', monospace; padding: 20px; max-width: 80mm; margin: 0 auto; font-size: 12px; }
+              .header { text-align: center; border-bottom: 1px dashed #000; padding-bottom: 10px; margin-bottom: 10px; }
+              .row { display: flex; justify-content: space-between; margin-bottom: 5px; }
+              .total { font-weight: bold; font-size: 14px; border-top: 1px solid #000; padding-top: 5px; margin-top: 5px; }
+              .footer { text-align: center; margin-top: 15px; font-size: 10px; }
+            </style>
+          </head>
+          <body>
+            <div class="header">
+              <h3>STOCK PURCHASE RECEIPT</h3>
+              <p>${currentOrganization?.name || 'Shop Manager 360'}</p>
             </div>
-            <div class="total-card">
-                <div class="total-label">Categories</div>
-                <div class="total-value neutral">${Object.keys(byCategory).length}</div>
-            </div>
-            <div class="total-card">
-                <div class="total-label">Total Cost Value</div>
-                <div class="total-value negative">$${totalCost.toLocaleString()}</div>
-            </div>
-        </div>
-    `;
-
-    Object.entries(byCategory).forEach(([cat, itemsVal]) => {
-        const items = itemsVal as ExpenseItem[];
-        const catTotal = items.reduce((sum, i) => sum + (i.units * i.costPerUnit), 0);
-        htmlContent += `
-            <h3 style="margin-top: 20px; color: #475569; border-bottom: 2px solid #e2e8f0; padding-bottom: 5px;">${cat}</h3>
-            <table>
-                <thead>
-                    <tr>
-                        <th style="width: 15%">Code</th>
-                        <th style="width: 35%">Description</th>
-                        <th style="width: 15%">Size</th>
-                        <th style="width: 10%">Qty</th>
-                        <th style="width: 10%">Cost</th>
-                        <th style="width: 15%" class="text-right">Total</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    ${items.map(i => `
-                        <tr>
-                            <td>${i.code}</td>
-                            <td>${i.description}</td>
-                            <td>${i.size}</td>
-                            <td>${i.units}</td>
-                            <td>${i.costPerUnit.toFixed(2)}</td>
-                            <td class="text-right">${(i.units * i.costPerUnit).toFixed(2)}</td>
-                        </tr>
-                    `).join('')}
-                    <tr style="background: #f8fafc; font-weight: bold;">
-                        <td colspan="5" class="text-right">Category Total</td>
-                        <td class="text-right">$${catTotal.toFixed(2)}</td>
-                    </tr>
-                </tbody>
-            </table>
-        `;
-    });
-
-    const fullHtml = generatePDFReport({
-        title: "Stock / Inventory Expenses Report",
-        content: htmlContent,
-        showDateRange: { startDate: printStartDate, endDate: printEndDate }
-    });
-
-    openPDFWindow(fullHtml);
-    setIsPrintModalOpen(false);
+            <div class="row"><span>PO No:</span> <strong>${formData.expenseNo}</strong></div>
+            <div class="row"><span>Date:</span> <span>${formData.orderDate}</span></div>
+            <div class="row"><span>Supplier:</span> <span>${supplierName}</span></div>
+            <hr style="border: 0; border-top: 1px dashed #000; margin: 5px 0;" />
+            <div class="row"><span>Item:</span> <span>${formData.item}</span></div>
+            <div class="row"><span>Qty:</span> <span>${formData.units} units @ ${formData.costPerUnit}</span></div>
+            <div class="row total"><span>Total:</span> <span>KSh ${formData.total.toLocaleString()}</span></div>
+            <div class="row"><span>Paid:</span> <span>KSh ${Number(formData.paymentAmount).toLocaleString()}</span></div>
+            <div class="row"><span>Balance:</span> <span>KSh ${formData.balance.toLocaleString()}</span></div>
+            <div class="footer"><p>Received By: _________________</p></div>
+          </body>
+        </html>
+      `;
+      openPDFWindow(html);
   };
 
-  // Stats
-  const totalItems = expenseItems.length;
-  const uniqueCategories = new Set(expenseItems.map(i => i.category)).size;
+  const handleDelete = (id: string) => {
+      if(window.confirm("Are you sure you want to delete this expense item?")) {
+          deleteExpenseItem(id);
+      }
+  };
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div className="flex justify-between items-center">
         <div>
-           <div className="flex items-center gap-2">
-            <h1 className="text-2xl font-bold text-slate-800">Stock / Inventory Expenses</h1>
-            <button 
-                onClick={() => setShowInfo(!showInfo)} 
-                className="text-slate-400 hover:text-blue-600 transition-colors"
-                title="What are Stock Expenses?"
-            >
-                <Info size={20} />
-            </button>
-           </div>
-           <p className="text-slate-500">Manage costs for raw materials and inventory purchases.</p>
+           <h1 className="text-2xl font-bold text-slate-800">Stock Expenses</h1>
+           <p className="text-slate-500">Manage inventory purchases and supplier orders.</p>
         </div>
-        <div className="flex gap-2">
-           <button 
-             onClick={() => setIsPrintModalOpen(true)}
-             className="bg-white border border-slate-300 text-slate-700 px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 hover:bg-slate-50 shadow-sm"
-           >
-             <Printer size={16} /> Print Report
-           </button>
-           <button 
-             onClick={() => setIsImportModalOpen(true)}
-             className="bg-white border border-slate-300 text-slate-700 px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 hover:bg-slate-50 shadow-sm"
-           >
-             <Upload size={16} /> Import
-           </button>
-           <button 
-             onClick={() => handleOpenAddModal()}
-             className="bg-gradient-to-r from-orange-600 to-red-600 text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 hover:from-orange-700 hover:to-red-700 shadow-sm transition-all"
-           >
-             <Plus size={16} /> Add Item
-           </button>
-        </div>
+        <button onClick={() => handleOpenAddModal()} className="bg-orange-600 text-white px-4 py-2 rounded-lg font-medium flex items-center gap-2 hover:bg-orange-700"><Plus size={16} /> Add Stock Expense</button>
       </div>
 
-      {showInfo && (
-        <div className="bg-blue-50 border border-blue-100 rounded-lg p-4 animate-in fade-in slide-in-from-top-2 text-sm text-blue-800 relative">
-            <button 
-                onClick={() => setShowInfo(false)} 
-                className="absolute top-3 right-3 text-blue-400 hover:text-blue-700"
-            >
-                <X size={16} />
-            </button>
-            <h4 className="font-bold mb-2 flex items-center gap-2">
-                <Info size={16} /> About Stock / Inventory Expenses
-            </h4>
-            <p className="mb-3">These are expenses directly tied to buying inventory for resale or raw materials used for production (e.g., paper, ink for a print shop).</p>
-            <p className="font-bold mb-1">Examples:</p>
-            <ul className="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-1 list-disc list-inside text-blue-700">
-                <li>Buying products for resale</li>
-                <li>Buying ink, paper, and materials used to fulfill customer print orders</li>
-                <li>Freight and transport directly tied to stock delivery</li>
-                <li>Packaging used for goods sold</li>
-            </ul>
-        </div>
-      )}
-
-      {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-         <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
-            <div>
-               <p className="text-sm font-medium text-slate-500">Total Items</p>
-               <h3 className="text-3xl font-bold text-slate-800">{totalItems}</h3>
-            </div>
-            <div className="p-3 bg-blue-50 text-blue-600 rounded-lg">
-               <Receipt size={24} />
-            </div>
-         </div>
-         <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
-            <div>
-               <p className="text-sm font-medium text-slate-500">Active Categories</p>
-               <h3 className="text-3xl font-bold text-slate-800">{uniqueCategories}</h3>
-            </div>
-            <div className="p-3 bg-purple-50 text-purple-600 rounded-lg">
-               <Filter size={24} />
-            </div>
-         </div>
-      </div>
-
-      {/* Filters */}
-      <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col md:flex-row gap-4">
+      <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex gap-4">
          <div className="flex-1 relative">
             <Search className="absolute left-3 top-3 text-slate-400" size={16} />
-            <input 
-              type="text" 
-              placeholder="Search by code, description or category..." 
-              value={searchQuery}
-              onChange={e => setSearchQuery(e.target.value)}
-              className="w-full pl-9 pr-4 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-blue-500"
-            />
+            <input placeholder="Search stock expenses..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} className="w-full pl-9 pr-4 py-2 border border-slate-200 rounded-lg text-sm" />
          </div>
-         <div className="w-full md:w-64">
-            <select 
-              value={filterCategory}
-              onChange={e => setFilterCategory(e.target.value)}
-              className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-blue-500"
-            >
-               <option value="all">All Categories</option>
-               {categories.map(cat => (
-                 <option key={cat} value={cat}>{cat}</option>
-               ))}
-            </select>
-         </div>
+         <select value={filterCategory} onChange={e => setFilterCategory(e.target.value)} className="px-3 py-2 border border-slate-200 rounded-lg text-sm">
+            <option value="all">All Categories</option>
+            {categories.map(cat => (<option key={cat} value={cat}>{cat}</option>))}
+         </select>
       </div>
 
-      {/* Table */}
       <div className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
-         <div className="overflow-x-auto">
-            <table className="w-full text-left">
-               <thead className="bg-slate-50 border-b border-slate-200">
-                  <tr>
-                     <th className="px-6 py-4 text-xs font-semibold text-slate-500 uppercase">Code</th>
-                     <th className="px-6 py-4 text-xs font-semibold text-slate-500 uppercase">Description</th>
-                     <th className="px-6 py-4 text-xs font-semibold text-slate-500 uppercase">Category</th>
-                     <th className="px-6 py-4 text-xs font-semibold text-slate-500 uppercase">Size</th>
-                     <th className="px-6 py-4 text-xs font-semibold text-slate-500 uppercase">Units</th>
-                     <th className="px-6 py-4 text-xs font-semibold text-slate-500 uppercase">Cost/Unit</th>
-                     <th className="px-6 py-4 text-xs font-semibold text-slate-500 uppercase text-right">Actions</th>
+         <table className="w-full text-left">
+            <thead className="bg-slate-50 border-b border-slate-200">
+               <tr>
+                  <th className="px-6 py-4 text-xs font-semibold text-slate-500 uppercase">Date</th>
+                  <th className="px-6 py-4 text-xs font-semibold text-slate-500 uppercase">Item / Description</th>
+                  <th className="px-6 py-4 text-xs font-semibold text-slate-500 uppercase">Category</th>
+                  <th className="px-6 py-4 text-xs font-semibold text-slate-500 uppercase">Units</th>
+                  <th className="px-6 py-4 text-xs font-semibold text-slate-500 uppercase">Unit Cost</th>
+                  <th className="px-6 py-4 text-xs font-semibold text-slate-500 uppercase text-right">Actions</th>
+               </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+               {filteredItems.map(item => (
+                  <tr key={item.id} className="hover:bg-slate-50">
+                     <td className="px-6 py-4 text-sm text-slate-600 font-mono">
+                        {item.createdAt ? new Date(item.createdAt).toLocaleDateString() : '-'}
+                     </td>
+                     <td className="px-6 py-4 font-medium text-slate-800">{item.description} <span className="text-xs text-slate-400 block">{item.code}</span></td>
+                     <td className="px-6 py-4 text-sm"><span className="px-2 py-1 bg-slate-100 rounded text-slate-600 text-xs">{item.category}</span></td>
+                     <td className="px-6 py-4 text-sm text-slate-600">{item.units}</td>
+                     <td className="px-6 py-4 text-sm font-semibold text-slate-800">KSh {item.costPerUnit.toLocaleString()}</td>
+                     <td className="px-6 py-4 text-right">
+                        <div className="flex justify-end gap-2">
+                            <button onClick={() => handleOpenEditModal(item)} className="p-1.5 text-blue-600 hover:bg-blue-50 rounded transition-colors"><Edit size={16} /></button>
+                            <button onClick={() => handleDelete(item.id)} className="p-1.5 text-red-600 hover:bg-red-50 rounded transition-colors"><Trash2 size={16} /></button>
+                        </div>
+                     </td>
                   </tr>
-               </thead>
-               <tbody className="divide-y divide-slate-100">
-                  {filteredItems.length === 0 ? (
-                     <tr>
-                        <td colSpan={7} className="px-6 py-12 text-center text-slate-500">
-                           <div className="flex flex-col items-center gap-2">
-                               <Receipt size={32} className="text-slate-300"/>
-                               <p>No expense items match your search.</p>
-                           </div>
-                        </td>
-                     </tr>
-                  ) : (
-                     filteredItems.map(item => (
-                        <tr key={item.id} className="hover:bg-slate-50 transition-colors">
-                           <td className="px-6 py-4 font-mono text-xs text-slate-600 font-bold">{item.code}</td>
-                           <td className="px-6 py-4 font-medium text-slate-800">{item.description}</td>
-                           <td className="px-6 py-4 text-sm">
-                              <span className="inline-block px-2 py-0.5 rounded text-xs font-medium bg-slate-100 text-slate-600 border border-slate-200">
-                                {item.category}
-                              </span>
-                           </td>
-                           <td className="px-6 py-4 text-sm text-slate-600">{item.size}</td>
-                           <td className="px-6 py-4 text-sm text-slate-600">{item.units}</td>
-                           <td className="px-6 py-4 text-sm font-semibold text-slate-800">
-                              KSh {item.costPerUnit.toLocaleString()}
-                           </td>
-                           <td className="px-6 py-4 text-right">
-                              <div className="flex justify-end gap-2">
-                                 <button 
-                                   onClick={() => handleOpenAddModal(item)}
-                                   className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-md transition-colors"
-                                 >
-                                    <Edit size={16} />
-                                 </button>
-                                 <button 
-                                   onClick={() => handleDeleteClick(item)}
-                                   className="p-1.5 text-red-600 hover:bg-red-50 rounded-md transition-colors"
-                                 >
-                                    <Trash2 size={16} />
-                                 </button>
-                              </div>
-                           </td>
-                        </tr>
-                     ))
-                  )}
-               </tbody>
-            </table>
-         </div>
+               ))}
+            </tbody>
+         </table>
       </div>
 
-      {/* Add/Edit Modal */}
       {isAddModalOpen && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 backdrop-blur-sm animate-in fade-in duration-200">
-           <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col max-h-[90vh]">
-              <div className="px-6 py-4 border-b border-slate-200 flex justify-between items-center bg-slate-50 sticky top-0">
-                 <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
-                    {editingItem ? <Edit size={18} className="text-orange-600"/> : <Plus size={18} className="text-orange-600"/>}
-                    {editingItem ? 'Edit Item' : 'Add New Item'}
-                 </h3>
-                 <button onClick={() => setIsAddModalOpen(false)} className="text-slate-400 hover:text-red-500 transition-colors">
-                    <X size={20} />
-                 </button>
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
+           <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl flex flex-col max-h-[90vh] relative overflow-hidden">
+              
+              {showSuccess && (
+                <div className="absolute inset-0 bg-slate-900 z-50 flex flex-col items-center justify-center animate-in fade-in duration-300">
+                    <div className="absolute inset-0 opacity-10 bg-[radial-gradient(#f97316_1px,transparent_1px)] [background-size:16px_16px]"></div>
+                    
+                    <div className="relative z-10 flex flex-col items-center max-w-md text-center p-8">
+                        <div className="w-20 h-20 bg-green-500 rounded-full flex items-center justify-center mb-6 shadow-lg shadow-green-500/30 animate-in zoom-in duration-500">
+                            <CheckCircle className="w-10 h-10 text-white" strokeWidth={3} />
+                        </div>
+                        
+                        <h2 className="text-3xl font-extrabold text-white mb-3 tracking-tight">
+                            Saved Successfully!
+                        </h2>
+                        <p className="text-slate-400 text-lg mb-8">
+                            Transaction recorded. Inventory updated.
+                        </p>
+                        
+                        <div className="flex flex-col w-full gap-3">
+                            <button onClick={handlePrintCurrent} className="w-full py-3 bg-white text-slate-900 rounded-xl font-bold hover:bg-blue-50 transition-all flex items-center justify-center gap-2 shadow-lg group">
+                                <Printer size={20} className="text-blue-600 group-hover:scale-110 transition-transform" /> Print Order
+                            </button>
+                            
+                            <div className="flex gap-3 mt-2">
+                                <button onClick={handleAddNew} className="flex-1 py-3 bg-slate-800 text-white border border-slate-700 rounded-xl font-bold hover:bg-slate-700 transition-all flex items-center justify-center gap-2">
+                                    <Plus size={20} /> Add New
+                                </button>
+                                <button onClick={handleClose} className="flex-1 py-3 bg-transparent text-slate-400 border border-slate-700 rounded-xl font-bold hover:bg-slate-800 hover:text-white transition-all flex items-center justify-center gap-2">
+                                    Close
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+              )}
+
+              <div className="px-6 py-4 border-b border-slate-200 bg-slate-50 rounded-t-xl flex justify-between items-center">
+                  <h3 className="text-lg font-bold text-slate-800">Add Stock Expense</h3>
+                  <button onClick={handleClose} className="text-slate-400 hover:text-red-500"><X size={24} /></button>
               </div>
-              <form onSubmit={handleSubmit} className="p-6 space-y-4 overflow-y-auto">
-                 <div>
-                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Category *</label>
-                    <select 
-                      value={formData.category}
-                      onChange={e => handleCategoryChange(e.target.value)}
-                      className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:border-blue-500 outline-none"
-                    >
-                       {categories.map(cat => (
-                          <option key={cat} value={cat}>{cat}</option>
-                       ))}
-                    </select>
-                 </div>
-                 
-                 <div>
-                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Expense Code (Auto)</label>
-                    <input 
-                      type="text" 
-                      value={formData.code}
-                      readOnly
-                      className="w-full px-3 py-2 border border-slate-200 bg-slate-50 text-slate-500 rounded-lg text-sm font-mono"
-                    />
+              
+              <form onSubmit={handleSubmit} className="p-6 overflow-y-auto flex-1 space-y-6">
+                 {/* Top Section */}
+                 <div className="grid grid-cols-2 gap-6">
+                     <div>
+                         <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Expense No.</label>
+                         <input disabled value={formData.expenseNo} className="w-full px-3 py-2 border bg-slate-100 rounded-lg text-sm text-slate-500" />
+                     </div>
+                     <div>
+                         <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Order Date</label>
+                         <input type="date" value={formData.orderDate} onChange={e => setFormData({...formData, orderDate: e.target.value})} className="w-full px-3 py-2 border rounded-lg text-sm" />
+                     </div>
                  </div>
 
-                 <div>
-                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Description *</label>
-                    <input 
-                      required
-                      type="text" 
-                      placeholder="Item description"
-                      value={formData.description}
-                      onChange={e => setFormData({...formData, description: e.target.value})}
-                      className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:border-blue-500 outline-none"
-                    />
+                 {/* Supplier Section */}
+                 <div className="bg-slate-50 p-4 rounded-lg border border-slate-200">
+                     <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Supplier</label>
+                     <div className="grid grid-cols-2 gap-4">
+                         <select 
+                            value={formData.supplierId} 
+                            onChange={e => setFormData({...formData, supplierId: e.target.value, newSupplierName: ''})} 
+                            className="w-full px-3 py-2 border rounded-lg text-sm"
+                         >
+                             <option value="">-- Select Supplier --</option>
+                             {suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                         </select>
+                         <input 
+                            placeholder="Or enter new supplier name" 
+                            value={formData.newSupplierName}
+                            onChange={e => setFormData({...formData, newSupplierName: e.target.value, supplierId: ''})}
+                            className="w-full px-3 py-2 border rounded-lg text-sm"
+                         />
+                     </div>
+                     {formData.newSupplierName && (
+                         <label className="flex items-center gap-2 mt-2 cursor-pointer">
+                             <input type="checkbox" checked={formData.saveSupplier} onChange={e => setFormData({...formData, saveSupplier: e.target.checked})} className="w-4 h-4 rounded border-gray-300 text-orange-600 focus:ring-orange-500" />
+                             <span className="text-sm text-slate-600">Save to Supplier List</span>
+                         </label>
+                     )}
                  </div>
 
+                 {/* Item Details */}
                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                       <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Size / Unit</label>
-                       <input 
-                         type="text" 
-                         placeholder="e.g. A4"
-                         value={formData.size}
-                         onChange={e => setFormData({...formData, size: e.target.value})}
-                         className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:border-blue-500 outline-none"
-                       />
-                    </div>
-                    <div>
-                       <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Default Units</label>
-                       <input 
-                         type="number" 
-                         value={formData.units}
-                         onChange={e => setFormData({...formData, units: e.target.value})}
-                         className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:border-blue-500 outline-none"
-                       />
-                    </div>
+                     <div className="col-span-2">
+                         <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Item (Expense)</label>
+                         <input 
+                            list="inventory-list" 
+                            placeholder="e.g. A4 Paper Reams" 
+                            required 
+                            value={formData.item}
+                            onChange={e => setFormData({...formData, item: e.target.value})}
+                            className="w-full px-3 py-2 border rounded-lg text-sm" 
+                         />
+                         <datalist id="inventory-list">
+                             {inventory.map(i => <option key={i.id} value={i.name} />)}
+                         </datalist>
+                     </div>
+                     <div className="col-span-2">
+                         <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Description</label>
+                         <input value={formData.description} onChange={e => setFormData({...formData, description: e.target.value})} className="w-full px-3 py-2 border rounded-lg text-sm" />
+                     </div>
+                     <div>
+                         <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Category</label>
+                         <select value={formData.category} onChange={e => setFormData({...formData, category: e.target.value})} className="w-full px-3 py-2 border rounded-lg text-sm">
+                             {categories.map(c => <option key={c} value={c}>{c}</option>)}
+                         </select>
+                     </div>
                  </div>
-                 <div>
-                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Cost Per Unit *</label>
-                    <input 
-                      required
-                      type="number" 
-                      step="0.01"
-                      placeholder="0.00"
-                      value={formData.costPerUnit}
-                      onChange={e => setFormData({...formData, costPerUnit: e.target.value})}
-                      className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:border-blue-500 outline-none"
-                    />
+
+                 {/* Cost Calculation */}
+                 <div className="grid grid-cols-3 gap-4 border-t border-slate-100 pt-4">
+                     <div>
+                         <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Units Ordered</label>
+                         <input type="number" required value={formData.units} onChange={e => setFormData({...formData, units: e.target.value})} className="w-full px-3 py-2 border rounded-lg text-sm" />
+                     </div>
+                     <div>
+                         <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Cost Per Unit</label>
+                         <input type="number" required value={formData.costPerUnit} onChange={e => setFormData({...formData, costPerUnit: e.target.value})} className="w-full px-3 py-2 border rounded-lg text-sm" />
+                     </div>
+                     <div>
+                         <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Total Cost</label>
+                         <div className="w-full px-3 py-2 bg-slate-100 border border-slate-200 rounded-lg text-sm font-bold text-slate-800">
+                             KSh {formData.total.toLocaleString()}
+                         </div>
+                     </div>
                  </div>
-                 
-                 <div className="pt-4 flex justify-end gap-2 border-t border-slate-100 mt-2">
-                    <button 
-                      type="button" 
-                      onClick={() => setIsAddModalOpen(false)}
-                      className="px-4 py-2 border border-slate-300 rounded-lg text-slate-700 text-sm font-medium hover:bg-slate-50 transition-colors"
-                    >
-                      Cancel
-                    </button>
-                    <button 
-                      type="submit"
-                      className="px-6 py-2 bg-gradient-to-r from-orange-600 to-red-600 text-white rounded-lg text-sm font-medium hover:from-orange-700 hover:to-red-700 shadow-sm transition-colors"
-                    >
-                      {editingItem ? 'Update Item' : 'Add Item'}
-                    </button>
+
+                 {/* Office Record / Payment */}
+                 <div className="bg-orange-50 p-4 rounded-lg border border-orange-100">
+                     <h4 className="text-sm font-bold text-orange-800 mb-3 border-b border-orange-200 pb-2">Office Record</h4>
+                     <div className="grid grid-cols-2 gap-4">
+                         <div>
+                             <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Payment Amount</label>
+                             <input type="number" value={formData.paymentAmount} onChange={e => setFormData({...formData, paymentAmount: e.target.value})} className="w-full px-3 py-2 border rounded-lg text-sm" />
+                         </div>
+                         <div>
+                             <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Balance</label>
+                             <div className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm font-bold text-red-600">
+                                 KSh {formData.balance.toLocaleString()}
+                             </div>
+                         </div>
+                         <div>
+                             <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Date Paid</label>
+                             <input type="date" value={formData.datePaid} onChange={e => setFormData({...formData, datePaid: e.target.value})} className="w-full px-3 py-2 border rounded-lg text-sm bg-white" />
+                         </div>
+                         <div>
+                             <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Payment Method</label>
+                             <select 
+                                value={formData.paymentMethod} 
+                                onChange={e => setFormData({...formData, paymentMethod: e.target.value as any})} 
+                                className="w-full px-3 py-2 border rounded-lg text-sm bg-white"
+                             >
+                                 <option value="Bank">Bank Transfer</option>
+                                 <option value="M-PESA">M-PESA</option>
+                                 <option value="Cash">Cash</option>
+                                 <option value="Card">Card</option>
+                             </select>
+                         </div>
+                     </div>
+                 </div>
+
+                 {/* Status Checkbox */}
+                 <div className="flex items-center gap-2 p-3 border border-green-200 bg-green-50 rounded-lg">
+                     <button
+                        type="button"
+                        onClick={() => setFormData(prev => ({...prev, status: prev.status === 'Received' ? 'Pending' : 'Received'}))}
+                        className={`w-5 h-5 flex items-center justify-center rounded border ${formData.status === 'Received' ? 'bg-green-600 border-green-600 text-white' : 'bg-white border-slate-300'}`}
+                     >
+                         {formData.status === 'Received' && <CheckSquare size={14} />}
+                     </button>
+                     <span className="text-sm font-bold text-green-800">Received (Stock will be updated)</span>
+                 </div>
+
+                 <div className="flex justify-end gap-2 pt-4 border-t border-slate-200">
+                    <button type="button" onClick={handleClose} className="px-4 py-2 border rounded-lg text-sm font-medium hover:bg-slate-50">Cancel</button>
+                    <button type="submit" className="px-6 py-2 bg-orange-600 text-white rounded-lg text-sm font-medium hover:bg-orange-700">Save Expense</button>
                  </div>
               </form>
            </div>
         </div>
       )}
-
-      {/* Delete Confirmation Modal */}
-      {isDeleteModalOpen && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
-           <div className="bg-white rounded-xl shadow-xl w-full max-w-sm overflow-hidden p-6 text-center">
-              <div className="w-12 h-12 rounded-full bg-red-100 flex items-center justify-center mx-auto mb-4 text-red-600">
-                  <Trash2 size={24} />
-              </div>
-              <h3 className="text-lg font-bold text-slate-800 mb-2">Delete Expense Item?</h3>
-              <p className="text-sm text-slate-500 mb-6">
-                Are you sure you want to delete <span className="font-bold text-slate-700">{itemToDelete?.description}</span>? This action cannot be undone.
-              </p>
-              <div className="flex gap-2 justify-center">
-                  <button 
-                    onClick={() => setIsDeleteModalOpen(false)}
-                    className="px-4 py-2 border border-slate-300 rounded-lg text-slate-700 text-sm font-medium hover:bg-slate-50"
-                  >
-                    Cancel
-                  </button>
-                  <button 
-                    onClick={confirmDelete}
-                    className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-sm font-medium"
-                  >
-                    Delete Item
-                  </button>
-              </div>
-           </div>
-        </div>
-      )}
-
-      {/* Import Modal */}
-      {isImportModalOpen && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
-           <div className="bg-white rounded-xl shadow-xl w-full max-w-md overflow-hidden">
-               <div className="px-6 py-4 border-b border-slate-200 flex justify-between items-center bg-slate-50">
-                  <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
-                     <Upload size={18} className="text-blue-600"/> Import Expenses
-                  </h3>
-                  <button onClick={() => setIsImportModalOpen(false)} className="text-slate-400 hover:text-red-500">
-                     <X size={20} />
-                  </button>
-               </div>
-               <div className="p-6 space-y-4">
-                  <div className="border-2 border-dashed border-slate-300 rounded-lg p-6 text-center hover:bg-slate-50 transition-colors">
-                     <input 
-                       type="file" 
-                       accept=".json" 
-                       onChange={e => setSelectedFile(e.target.files?.[0] || null)}
-                       className="hidden" 
-                       id="file-upload"
-                     />
-                     <label htmlFor="file-upload" className="cursor-pointer block">
-                        <Upload className="mx-auto text-slate-400 mb-2" size={32} />
-                        <span className="text-sm font-medium text-blue-600 hover:underline">Click to upload JSON</span>
-                        <p className="text-xs text-slate-400 mt-1">{selectedFile ? selectedFile.name : "or drag and drop"}</p>
-                     </label>
-                  </div>
-                  
-                  <div className="bg-orange-50 p-3 rounded-lg border border-orange-100 text-xs text-orange-800">
-                     <strong>Note:</strong> JSON file must follow the specific schema with categories and nested expenses.
-                  </div>
-
-                  <div className="pt-2 flex justify-end gap-2">
-                     <button 
-                       onClick={() => setIsImportModalOpen(false)}
-                       className="px-4 py-2 border border-slate-300 rounded-lg text-slate-700 text-sm font-medium"
-                     >
-                       Cancel
-                     </button>
-                     <button 
-                       onClick={handleFileUpload}
-                       disabled={!selectedFile || uploading}
-                       className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50"
-                     >
-                       {uploading ? 'Importing...' : 'Import Data'}
-                     </button>
-                  </div>
-               </div>
-           </div>
-        </div>
-      )}
-
-      {/* Print Modal */}
-      {isPrintModalOpen && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
-           <div className="bg-white rounded-xl shadow-xl w-full max-w-sm overflow-hidden">
-               <div className="px-6 py-4 border-b border-slate-200 flex justify-between items-center bg-slate-50">
-                  <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
-                     <Printer size={18} className="text-slate-600"/> Generate Report
-                  </h3>
-                  <button onClick={() => setIsPrintModalOpen(false)} className="text-slate-400 hover:text-red-500">
-                     <X size={20} />
-                  </button>
-               </div>
-               <div className="p-6 space-y-4">
-                  <div>
-                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Start Date</label>
-                    <input 
-                      type="date"
-                      value={printStartDate}
-                      onChange={e => setPrintStartDate(e.target.value)}
-                      className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1">End Date</label>
-                    <input 
-                      type="date"
-                      value={printEndDate}
-                      onChange={e => setPrintEndDate(e.target.value)}
-                      className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
-                    />
-                  </div>
-                  <div className="pt-2 flex justify-end gap-2">
-                     <button 
-                       onClick={() => setIsPrintModalOpen(false)}
-                       className="px-4 py-2 border border-slate-300 rounded-lg text-slate-700 text-sm font-medium"
-                     >
-                       Cancel
-                     </button>
-                     <button 
-                       onClick={handlePrintPDF}
-                       className="px-4 py-2 bg-slate-800 text-white rounded-lg text-sm font-medium hover:bg-slate-900"
-                     >
-                       Generate PDF
-                     </button>
-                  </div>
-               </div>
-           </div>
-        </div>
-      )}
-
     </div>
   );
 };
